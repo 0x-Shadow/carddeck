@@ -80,7 +80,7 @@ export const generationJob = sqliteTable("generation_job", {
   deckId: text("deck_id")
     .notNull()
     .references(() => deck.id),
-  stage: text("stage").notNull(), // "outline" | "cards" | "chat"
+  stage: text("stage").notNull(), // "outline" | "cards"
   status: text("status").notNull(), // "pending" | "running" | "done" | "error" | "cancelled"
   /** JSON string of the stage input. */
   input: text("input").notNull().default("{}"),

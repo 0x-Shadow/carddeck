@@ -3,7 +3,15 @@ import { getDb } from "./db";
 import * as t from "../drizzle/schema";
 import { and, eq, asc } from "drizzle-orm";
 
-export type Stage = "outline" | "cards" | "chat";
+/**
+ * Queue stages.
+ *
+ * Chat revision is deliberately *not* a stage: `POST /api/deck/[id]/chat`
+ * applies a single-card revision synchronously (see `lib/revise.ts`), which is
+ * fast enough that a job + stream would only add latency. Only the two
+ * bulk-generating stages ride the queue.
+ */
+export type Stage = "outline" | "cards";
 export type JobStatus = "pending" | "running" | "done" | "error" | "cancelled";
 
 type GenerationJob = typeof t.generationJob.$inferSelect;

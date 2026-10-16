@@ -42,11 +42,6 @@ interface CardsInput {
   format: "presentation" | "document";
 }
 
-interface ChatInput {
-  cardId?: string;
-  instruction: string;
-}
-
 function parseInput<T>(job: Job): T {
   try {
     return JSON.parse(job.input) as T;
@@ -236,61 +231,6 @@ export async function runCardsJob(job: Job, deps: PipelineDeps = {}): Promise<vo
   }
 }
 
-/**
- * Chat stage — apply an AI revision to one card and record the exchange.
- *
- * The route (Task 11) persists the user message before enqueueing; this runner
- * stores the assistant's reply and the resulting blocks.
- */
-export async function runChatJob(job: Job, deps: PipelineDeps = {}): Promise<void> {
-  const db = deps.db ?? getDb();
-  const provider = deps.provider ?? createProvider();
-  const input = parseInput<ChatInput>(job);
-
-  try {
-    const cardId = input.cardId;
-    if (!cardId) throw new Error("chat job requires a cardId");
-    const card = await db.query.card.findFirst({ where: (c, { eq }) => eq(c.id, cardId) });
-    if (!card) throw new Error(`card ${cardId} no longer exists`);
-
-    let blocks: Block[];
-    let note: string | undefined;
-    try {
-      blocks = JSON.parse(card.blocks) as Block[];
-      if (!Array.isArray(blocks)) blocks = [];
-    } catch {
-      blocks = [];
-    }
-
-    const result = await provider.revise({
-      instruction: input.instruction,
-      blocks,
-      cardTitle: card.title,
-    });
-    note = result.note;
-
-    await db
-      .update(t.card)
-      .set({ blocks: JSON.stringify(result.blocks), status: "ready", genJobId: job.id })
-      .where(eq(t.card.id, card.id));
-
-    await db.insert(t.chatMessage).values({
-      deckId: job.deckId,
-      cardId: card.id,
-      role: "assistant",
-      content: note ?? "Updated this card.",
-    });
-
-    await updateJob(job.id, {
-      status: "done",
-      error: null,
-      result: JSON.stringify({ cardId: card.id, note }),
-    });
-  } catch (err) {
-    await failJob(db, job, err);
-  }
-}
-
 /** Run one job on the matching stage handler. Never throws. */
 export async function dispatchJob(job: Job, deps: PipelineDeps = {}): Promise<void> {
   try {
@@ -299,8 +239,6 @@ export async function dispatchJob(job: Job, deps: PipelineDeps = {}): Promise<vo
         return await runOutlineJob(job, deps);
       case "cards":
         return await runCardsJob(job, deps);
-      case "chat":
-        return await runChatJob(job, deps);
       default:
         await updateJob(job.id, { status: "error", error: `unknown stage "${job.stage}"` });
     }
