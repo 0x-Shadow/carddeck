@@ -1,7 +1,7 @@
 # Gamma Clone ("Carddeck") — Design Spec
 
 Date: 2026-10-16
-Status: Draft for review
+Status: Approved for build (user directed: PowerPoint-first, proceed without asking)
 Companion: `2026-10-16-gamma-reverse-engineering-findings.md`
 
 ## What we're building
@@ -18,7 +18,8 @@ two-stage AI generation, theme system, vertical reader + present mode).
 ## Explicitly out of scope (v1)
 
 - Real billing / credits / workspaces / SSO / multi-tenant admin.
-- PowerPoint import (`GenerateDocFromImport`) and template remix.
+- PowerPoint **import** (`GenerateDocFromImport`) and template remix. (PowerPoint
+  **export** is a first-class v1 feature — see below.)
 - Realtime multi-user Yjs collaboration (design leaves a seam for it).
 - Custom domains / site publishing.
 - AI **image** generation (v1 uses a curated stock/placeholder image picker;
@@ -37,8 +38,11 @@ extend later.
 4. Watch cards generate (streamed); each card is a themed layout of blocks.
 5. Edit any card inline; use an **AI chat** panel to rewrite a card or the doc.
 6. Switch theme and see the whole deck re-skin instantly.
-7. **Present** full-screen, **Share** via public link, **Export** to PDF.
-8. A public reader URL renders the deck without auth.
+7. **Present** full-screen, **Share** via public link.
+8. **Export to PowerPoint (.pptx)** — the primary export. Real, editable .pptx
+   that opens in PowerPoint / Google Slides / LibreOffice, one slide per card,
+   preserving theme fonts/colors and block layout. Also **Export to PDF**.
+9. A public reader URL renders the deck without auth.
 
 ## Architecture
 
@@ -161,11 +165,25 @@ example"). No ProseMirror in v1 — a simpler controlled block editor keeps the
 clone buildable; the `Block[]` shape is ProseMirror-compatible so it can be
 swapped in later.
 
-### Export
+### Export — PowerPoint is the headline
 
-- **PDF** — headless Chromium (Playwright) print-to-PDF of the reader route,
-  one page per card for presentations.
+The core deliverable is a **real, editable .pptx** (same as Gamma's PowerPoint
+export). Implementation, mirroring Gamma's HTML→PowerPoint path:
+
+- **.pptx (primary)** — render each themed card to HTML/CSS offscreen
+  (16:9, `1280×720`), then convert that DOM into real PowerPoint shapes via
+  `html2pptx`. Each card becomes one slide; theme fonts/colors map to slide
+  theme + text runs; blocks map to text boxes / pictures / tables / charts.
+  Output reopens in PowerPoint, Google Slides, and LibreOffice Impress.
+- **Theme template (.potx)** — the active theme exported as a PowerPoint
+  template so a deck reopens with the right fonts/colors as its master.
+- **PDF (secondary)** — headless Chromium (Playwright) print-to-PDF of the
+  reader route, one page per card.
 - **Share** — flip `isPublic` + mint `shareSlug`; reader at `/view/[slug]`.
+
+Design choice (ledger ruling): the browser renders the deck to HTML and
+`html2pptx` measures the real DOM, so exported layout matches the on-screen /
+reader layout faithfully without a second hand-built PowerPoint renderer.
 
 ## Error handling
 

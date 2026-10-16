@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a self-hostable Gamma clone: prompt → editable outline → AI-generated, themed deck of cards → refine → present / share / export.
+**Goal:** Build a self-hostable Gamma clone ("Carddeck"): prompt → editable outline → AI-generated, themed deck of cards → refine → present / share, with **real PowerPoint (.pptx) export as the headline deliverable** (plus PDF).
 
-**Architecture:** Turborepo monorepo. `apps/web` (Next.js App Router + BFF route handlers) is the client + API. A DB-table job queue plus `apps/worker` runs the two-stage AI pipeline out-of-band; the web app subscribes to progress via SSE and renders cards as they land. `packages/core` holds the block/theme model and pure logic, `packages/ai` holds the swappable LLM provider (deterministic `StubProvider` by default, `OpenAIProvider` when a key is present). SQLite + Drizzle for storage.
+**Architecture:** Turborepo monorepo. `apps/web` (Next.js App Router + BFF route handlers) is the client + API. A DB-table job queue plus `apps/worker` runs the two-stage AI pipeline out-of-band; the web app subscribes to progress via SSE and renders cards as they land. `packages/core` holds the block/theme model and pure logic, `packages/ai` holds the swappable LLM provider (deterministic `StubProvider` by default, `OpenAIProvider` when a key is present), `packages/pptx` turns rendered card HTML into a real editable .pptx via `html2pptx`. SQLite + Drizzle for storage.
 
-**Tech Stack:** Next.js 15 (App Router, RSC), React 19, TypeScript, Tailwind, Drizzle ORM + better-sqlite3, Vitest, Supertest, Playwright, unconstrained `fetch`-based OpenAI-compatible client.
+**Tech Stack:** Next.js 15 (App Router, RSC), React 19, TypeScript, Tailwind, Drizzle ORM + better-sqlite3, Vitest, Supertest, Playwright, `html2pptx` (DOM→PPTX), unconstrained `fetch`-based OpenAI-compatible client.
 
 **Spec:** `docs/superpowers/specs/2026-10-16-gamma-clone-design.md` (argues from `2026-10-16-gamma-reverse-engineering-findings.md`). Read both before implementing.
 
@@ -29,7 +29,7 @@ These are the inputs/failure modes the spec implies but no single task's happy-p
 2. **Concurrent generation jobs / double-submit** — user clicks Generate twice or two tabs. Expected: one job per deck per stage; second request returns the in-flight job, never a second concurrent pipeline. Pinned in Task 7 (idempotency test) and Task 8 (integration).
 3. **Theme switch with existing complex blocks** (columns, chart, callout, cover image) — expected: re-skin via CSS vars with zero re-render of block content and no layout collapse. Pinned in Task 6 (token→CSS test) and Task 13 (E2E theme switch).
 4. **Public reader auth boundary** — unauthenticated GET to `/view/[slug]` and `/api/public/[slug]` for a private deck. Expected: 404 for private, full render for public, never leaks owner email or unpublished deck fields. Pinned in Task 8 (integration) and Task 14 (E2E).
-5. **Export renders only approved content and valid PDF** — expected: PDF export re-checks `isPublic` or ownership, returns `%PDF` bytes, one page per card in presentation format. Pinned in Task 10 (integration) and Task 14 (E2E).
+5. **Export renders only approved content and valid .pptx/.pdf** — expected: both export routes re-check `isPublic` or ownership; .pptx returns `PK` zip magic bytes and one slide per card, .pdf returns `%PDF` bytes. Pinned in Task 13 (pptx unit + web integration), Task 14 (pdf integration), and Task 15 (E2E PowerPoint download).
 
 ---
 
@@ -57,6 +57,12 @@ gamma-clone/
     test/stub.test.ts
     test/validate.test.ts
     test/openai.test.ts            (mocked fetch)
+  packages/pptx/
+    src/render-slides.ts           deck+card → offscreen 16:9 card HTML (Playwright)
+    src/build-pptx.ts              card HTML slides → editable .pptx (html2pptx)
+    src/theme-potx.ts              Theme → .potx OOXML template
+    test/build-pptx.test.ts
+    test/theme-potx.test.ts
   apps/web/
     drizzle/schema.ts              user, deck, card, theme, generationJob, chatMessage
     drizzle/                       migrations + db client
@@ -109,7 +115,7 @@ gamma-clone/
 - Test: `packages/core/test/{blocks,theme,outline}.test.ts`
 
 **Interfaces:**
-- Produces: `Block`, `Inline`, `Theme`, `OutlineCard` types; `applyThemeTokens(theme): Record<string,string>`; `moveOutlineCard(cards, from, to)`, `addOutlineCard`, `removeOutlineCard`, `renameOutlineCard`; `inlineToPlainText(inline)`. All later tasks import from `@carddeck/core`.
+- Produces: `Block`, `Inline`, `Theme`, `OutlineCard` types; `applyThemeTokens(theme): Record<string,string>`; `moveOutlineCard(cards, from, to)`, `addOutlineCard(cards, at, card)` (inserts *at* index `at`, shifting existing right), `removeOutlineCard`, `renameOutlineCard`; `inlineToPlainText(inline)`. All later tasks import from `@carddeck/core`.
 
 - [ ] **Step 1: Write failing tests for the block model and theme tokens**
 
@@ -766,20 +772,90 @@ git add -A && git commit -m "feat(web): public reader, present mode, share"
 
 ---
 
-### Task 13: PDF export route
+### Task 13: PowerPoint (.pptx) export — the headline deliverable
 
 **Files:**
-- Create: `apps/web/app/api/deck/[id]/export/route.ts`
-- Test: `apps/web/test/export.test.ts`
+- Create: `packages/pptx/package.json`, `packages/pptx/src/{render-slides,build-pptx,theme-potx}.ts`
+- Create: `apps/web/app/api/deck/[id]/export/pptx/route.ts`
+- Test: `packages/pptx/test/{build-pptx,theme-potx}.test.ts`, `apps/web/test/export-pptx.test.ts`
+
+**Interfaces:**
+- Consumes: `BlockRenderer` + `deckCssVars` (Task 6/9), Playwright chromium, `html2pptx`, deck/card/theme data (Task 3/5), reader route (Task 12).
+- Produces: `renderSlideHtml(deck, card): Promise<string>` (offscreen 16:9 DOM for one card); `buildPptxBuffer(slides): Promise<Buffer>` (html2pptx → editable .pptx); `buildThemePotxBuffer(theme): Promise<Buffer>` (.potx template); `GET /api/deck/[id]/export/pptx` → `application/vnd.openxmlformats-officedocument.presentationml.presentation` attachment (re-checks `isPublic || owner`); `GET /api/deck/[id]/export/potx` → `.potx`.
+
+- [ ] **Step 1: Write failing pptx tests**
+
+```ts
+// packages/pptx/test/build-pptx.test.ts
+import { describe, it, expect } from "vitest";
+import { buildPptxBuffer } from "../src/build-pptx";
+
+describe("buildPptxBuffer", () => {
+  it("returns a valid pptx zip (PK header) with one slide per input", async () => {
+    // html2pptx needs a real DOM; stub its convert() to return 1 fake slide per html doc
+    const slides = [{ html: "<div><h1>Big Idea</h1><p>Body</p></div>" }];
+    const buf = await buildPptxBuffer(slides, fakeConverter());
+    expect(buf.subarray(0, 2).toString("latin1")).toBe("PK");   // zip magic
+    expect(buf.byteLength).toBeGreaterThan(1000);
+  });
+});
+```
+
+```ts
+// packages/pptx/test/theme-potx.test.ts
+import { describe, it, expect } from "vitest";
+import { buildThemePotxBuffer } from "../src/theme-potx";
+import { PRESET_THEMES } from "@carddeck/core";
+
+describe("theme template", () => {
+  it("emits a .potx zip carrying the theme fonts/colors", async () => {
+    const t = PRESET_THEMES.find(x => x.name === "Midnight")!;
+    const buf = await buildThemePotxBuffer(t);
+    expect(buf.subarray(0, 2).toString("latin1")).toBe("PK");
+    const xml = await readZipEntry(buf, "ppt/theme/theme1.xml"); // helper reads the zip
+    expect(xml).toContain(t.colors.accent.replace("#", "").toUpperCase().slice(0,6));
+  });
+});
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `npm test -w @carddeck/pptx`
+Expected: FAIL — module not found / no package yet.
+
+- [ ] **Step 3: Implement `packages/pptx/src/*`**
+
+`renderSlidesHtml` uses Playwright to load a private render route at 1280×720 per card and returns each card's outerHTML. `buildPptxBuffer(slides, converter)` zips html2pptx output into a Buffer (html2pptx yields a pptx ArrayBuffer); accept an injectable `converter` so the test is DOM-free. `theme-potx` builds a minimal valid `.potx` (zip with `ppt/theme/theme1.xml` + presentation parts) mapping `theme.fonts.{display,body}` and `theme.colors.{accent,surface,ink,page}` into the OOXML theme color slots.
+
+- [ ] **Step 4: Implement the route + web test, verify PASS**
+
+`GET /api/deck/[id]/export/pptx` loads the deck, renders each card via the offscreen renderer, calls `buildPptxBuffer`, and streams it as a `.pptx` attachment. Web test asserts the `PK` magic bytes and 404 for non-owner private decks.
+
+Run: `npm test -w @carddeck/pptx && npm test -w web`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A && git commit -m "feat(pptx): editable PowerPoint export + theme .potx template"
+```
+
+---
+
+### Task 14: PDF export route
+
+**Files:**
+- Create: `apps/web/app/api/deck/[id]/export/pdf/route.ts`
+- Test: `apps/web/test/export-pdf.test.ts`
 
 **Interfaces:**
 - Consumes: Playwright chromium, reader route (Task 12).
-- Produces: `GET /api/deck/[id]/export` → `application/pdf` attachment; re-checks `isPublic || owner`; presentation format uses one PDF page per card.
+- Produces: `GET /api/deck/[id]/export/pdf` → `application/pdf` attachment; re-checks `isPublic || owner`; presentation format uses one PDF page per card.
 
 - [ ] **Step 1: Write failing test**
 
 ```ts
-// apps/web/test/export.test.ts
+// apps/web/test/export-pdf.test.ts
 import { describe, it, expect } from "vitest";
 // auth'd export returns bytes starting with "%PDF"
 // non-owner without public deck → 404
@@ -798,7 +874,7 @@ git add -A && git commit -m "feat(web): PDF export via headless chromium"
 
 ---
 
-### Task 14: Landing, dashboard, creation flow, E2E suite
+### Task 15: Landing, dashboard, creation flow, E2E suite
 
 **Files:**
 - Create: `apps/web/app/page.tsx`, `apps/web/app/dashboard/page.tsx`, `apps/web/app/new/page.tsx`, `e2e/playwright.config.ts`, `e2e/tests/*.spec.ts`
@@ -820,6 +896,7 @@ test("theme switch re-skins without re-render", async ({ page }) => { /* change 
 test("present mode advances with arrows", async ({ page }) => { /* open present, press ArrowRight, expect progress */ });
 test("public reader works signed out", async ({ browser }) => { /* new context (no cookie) opens /view/[slug], sees title */ });
 test("partial failure shows per-card retry", async ({ page }) => { /* force a card error (test hook), expect retry button */ });
+test("PowerPoint export downloads a valid .pptx", async ({ page }) => { /* click Export → PowerPoint, expect download with PK magic bytes and .pptx name */ });
 ```
 E2E base URL `http://localhost:3000`; the suite boots web + worker with `StubProvider` and an isolated `DATA_DIR`.
 
@@ -836,7 +913,7 @@ git add -A && git commit -m "feat(web): landing, dashboard, creation flow + e2e 
 
 ---
 
-### Task 15: Docs, `.env.example`, README, final whole-branch review
+### Task 16: Docs, `.env.example`, README, final whole-branch review
 
 **Files:**
 - Create: `README.md`, `.env.example`, `docs/SETUP.md`
