@@ -7,8 +7,13 @@ export default defineConfig({
       "@": fileURLToPath(new URL(".", import.meta.url)),
     },
   },
+  // tsconfig sets `jsx: "preserve"` because Next.js compiles JSX itself, so
+  // component tests need vitest's esbuild step to apply the automatic runtime.
+  esbuild: {
+    jsx: "automatic",
+  },
   test: {
     environment: "node",
-    include: ["test/**/*.test.ts"],
+    include: ["test/**/*.test.{ts,tsx}"],
   },
 });

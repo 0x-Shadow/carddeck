@@ -24,8 +24,11 @@ interface Env {
  * Pick the AI backend. Returns an `OpenAIProvider` only when an API key is
  * configured; otherwise the deterministic, key-free `StubProvider`. This is why
  * the whole app runs with zero credentials.
+ *
+ * Accepts a plain env record (or `process.env`) so callers and tests can pass
+ * either without depending on @types/node's `ProcessEnv` alias.
  */
-export function createProvider(env: Env = process.env): AIProvider {
+export function createProvider(env: Env | NodeJS.ProcessEnv = process.env): AIProvider {
   const apiKey = env.OPENAI_API_KEY?.trim();
   if (!apiKey) {
     return new StubProvider();

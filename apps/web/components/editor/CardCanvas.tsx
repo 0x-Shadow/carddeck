@@ -1,0 +1,119 @@
+"use client";
+
+import type { Block, Theme } from "@carddeck/core";
+import { deckCssVars } from "@/lib/themes-presets";
+import { BlockEditor } from "./BlockEditor";
+
+export interface CanvasCard {
+  id: string;
+  position: number;
+  title: string;
+  /** JSON-encoded Block[] (as stored in the card row). */
+  blocks: string;
+  status: string;
+}
+
+export interface CanvasDeck {
+  id: string;
+  title: string;
+  format: string;
+  status: string;
+  themeId: string;
+}
+
+export interface CardCanvasProps {
+  deck: CanvasDeck;
+  cards: CanvasCard[];
+  theme?: Theme;
+  /** Persist a card's edited blocks. */
+  onEditCard?: (cardId: string, blocks: Block[]) => void;
+  /** Persist a card's edited title. */
+  onEditTitle?: (cardId: string, title: string) => void;
+  /** Re-run generation for a card that failed. */
+  onRetryCard?: (cardId: string) => void;
+}
+
+function parseBlocks(raw: string): Block[] {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? (parsed as Block[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The editor's document surface: one `.card` per card, in order, wearing the
+ * deck's theme as CSS custom properties.
+ *
+ * Card status drives what's inside: `ready` cards are editable, `error` cards
+ * offer a per-card retry, and `pending` cards show a generating state so a
+ * half-streamed deck never looks finished.
+ */
+export function CardCanvas({ deck, cards, theme, onEditCard, onEditTitle, onRetryCard }: CardCanvasProps) {
+  return (
+    <div
+      className="deck"
+      style={deckCssVars(theme ?? null)}
+      data-deck-format={deck.format}
+      data-deck-status={deck.status}
+    >
+      {cards.map((card) => (
+        <section
+          className="card"
+          key={card.id}
+          data-card-id={card.id}
+          data-card-status={card.status}
+        >
+          <header className="card-header">
+            <span className="card-index" aria-hidden="true">
+              {card.position + 1}
+            </span>
+            {onEditTitle ? (
+              <input
+                className="card-title card-title-input"
+                aria-label={`Card ${card.position + 1} title`}
+                value={card.title}
+                onChange={(e) => onEditTitle(card.id, e.target.value)}
+              />
+            ) : (
+              <h2 className="card-title">{card.title}</h2>
+            )}
+          </header>
+
+          <div className="card-body">
+            {card.status === "ready" ? (
+              <BlockEditor
+                blocks={parseBlocks(card.blocks)}
+                theme={theme}
+                onChange={(next) => onEditCard?.(card.id, next)}
+              />
+            ) : card.status === "error" ? (
+              <div className="card-error" role="alert">
+                <p>This card failed to generate.</p>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => onRetryCard?.(card.id)}
+                >
+                  Retry this card
+                </button>
+              </div>
+            ) : (
+              <div className="card-pending" aria-live="polite">
+                <p>Card is still generating…</p>
+                <div className="skeleton" />
+              </div>
+            )}
+          </div>
+        </section>
+      ))}
+
+      {cards.length === 0 ? (
+        <div className="card card-empty">
+          <p>No cards yet — create an outline to get started.</p>
+        </div>
+      ) : null}
+    </div>
+  );
+}

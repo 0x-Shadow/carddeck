@@ -24,9 +24,12 @@ export const REPO_ROOT = resolve(MODULE_DIR, "../../..");
  * Relative `DATA_DIR` values are anchored to the repo root so every process in
  * the monorepo (web, worker, e2e) agrees on one location no matter where it was
  * launched from. An absolute value is used verbatim.
+ *
+ * Takes a plain record rather than `NodeJS.ProcessEnv` so tests can pass
+ * literals and the signature doesn't depend on @types/node's evolving alias.
  */
 export function resolveDataDir(
-  env: NodeJS.ProcessEnv = process.env,
+  env: Record<string, string | undefined> = process.env,
   repoRoot: string = REPO_ROOT,
 ): string {
   const raw = env.DATA_DIR;
