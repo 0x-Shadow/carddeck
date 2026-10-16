@@ -2,6 +2,18 @@ import type { AIProvider } from "./types";
 import { StubProvider } from "./stub";
 import { OpenAIProvider } from "./openai";
 
+export type {
+  AIProvider,
+  CardRequest,
+  DeckFormat,
+  OutlineRequest,
+  ReviseRequest,
+  ReviseResult,
+} from "./types";
+export { StubProvider } from "./stub";
+export { OpenAIProvider, AIProviderError } from "./openai";
+export { AIValidationError, validateBlocks, validateOutline } from "./validate";
+
 interface Env {
   OPENAI_API_KEY?: string;
   OPENAI_MODEL?: string;
