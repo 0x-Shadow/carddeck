@@ -89,3 +89,34 @@ export async function updateJob(
     .set({ ...patch, updatedAt: Date.now() })
     .where(eq(t.generationJob.id, id));
 }
+
+/**
+ * Decode a job's `progress` JSON into `{ done, total }`.
+ *
+ * Tolerates a missing or corrupt column (progress is written concurrently by
+ * the worker), so a bad row degrades to zeros instead of throwing in a route
+ * handler or the SSE stream.
+ */
+export function parseProgress(raw: string | null | undefined): {
+  done: number;
+  total: number;
+} {
+  if (!raw) return { done: 0, total: 0 };
+  try {
+    const parsed = JSON.parse(raw) as Partial<{ done: number; total: number }>;
+    return {
+      done: typeof parsed.done === "number" ? parsed.done : 0,
+      total: typeof parsed.total === "number" ? parsed.total : 0,
+    };
+  } catch {
+    return { done: 0, total: 0 };
+  }
+}
+
+/** Job statuses that mean "no more events are coming". */
+export const TERMINAL_STATUSES = ["done", "error", "cancelled"] as const;
+
+/** True when a job status is terminal (done / error / cancelled). */
+export function isTerminalStatus(status: string): boolean {
+  return (TERMINAL_STATUSES as readonly string[]).includes(status);
+}

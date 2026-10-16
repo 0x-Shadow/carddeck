@@ -29,4 +29,35 @@ export async function resolveOwnedDeck(deckId: string): Promise<
   return { deck };
 }
 
+/**
+ * Resolve a generation job whose deck the current user owns.
+ *
+ * Same contract as `resolveOwnedDeck`: `{ job }` on success, or `{ res }` with a
+ * ready 401/404. Job routes (poll, cancel, SSE stream) are all owner-gated
+ * through this one helper.
+ */
+export async function resolveOwnedJob(jobId: string): Promise<
+  | { job: typeof t.generationJob.$inferSelect; res?: undefined }
+  | { job?: undefined; res: NextResponse }
+> {
+  const auth = await requireUser();
+  if (auth.res) return { res: auth.res };
+
+  const db = getDb();
+  const job = await db.query.generationJob.findFirst({
+    where: (j, { eq }) => eq(j.id, jobId),
+  });
+  if (!job) {
+    return { res: NextResponse.json({ error: "not found" }, { status: 404 }) };
+  }
+
+  const deck = await db.query.deck.findFirst({
+    where: (d, { and, eq }) => and(eq(d.id, job.deckId), eq(d.userId, auth.user.id)),
+  });
+  if (!deck) {
+    return { res: NextResponse.json({ error: "not found" }, { status: 404 }) };
+  }
+  return { job };
+}
+
 export { t, eq, and };
