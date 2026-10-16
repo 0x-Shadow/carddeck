@@ -9,6 +9,8 @@ import { randomUUID } from "node:crypto";
 
 const now = () => Date.now();
 
+export type User = typeof user.$inferSelect;
+
 export const user = sqliteTable("user", {
   id: text("id")
     .primaryKey()

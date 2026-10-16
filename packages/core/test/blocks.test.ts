@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isInline, inlineToPlainText } from "../src/blocks";
+import { isInline } from "../src/blocks";
 import { inlineToPlainText as plain } from "../src/serialize";
 
 describe("Inline model", () => {
