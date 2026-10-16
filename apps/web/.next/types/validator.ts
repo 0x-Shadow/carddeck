@@ -146,6 +146,24 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
   type __Unused = __Check
 }
 
+// Validate ../../app/api/deck/[id]/export/potx/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/deck/[id]/export/potx">> = Specific
+  const handler = {} as typeof import("../../app/api/deck/[id]/export/potx/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../app/api/deck/[id]/export/pptx/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/deck/[id]/export/pptx">> = Specific
+  const handler = {} as typeof import("../../app/api/deck/[id]/export/pptx/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
 // Validate ../../app/api/deck/[id]/generate/route.ts
 {
   type __IsExpected<Specific extends RouteHandlerConfig<"/api/deck/[id]/generate">> = Specific

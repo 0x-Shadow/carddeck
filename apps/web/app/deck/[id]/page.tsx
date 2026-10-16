@@ -10,6 +10,7 @@ import {
 } from "@/components/editor/CardCanvas";
 import { ThemePicker } from "@/components/theme/ThemePicker";
 import { ShareControl } from "@/components/share/ShareControl";
+import { ExportMenu } from "@/components/share/ExportMenu";
 
 interface DeckResponse {
   deck: CanvasDeck & { shareSlug?: string | null; isPublic?: number };
@@ -150,6 +151,7 @@ export default function DeckPage({ params }: { params: Promise<{ id: string }> }
             isPublic={deck!.isPublic === 1}
             shareSlug={deck!.shareSlug ?? null}
           />
+          <ExportMenu deckId={id} deckTitle={deck!.title} />
           <ThemePicker deckId={id} themeId={deck!.themeId} onChange={changeTheme} />
         </div>
       </header>

@@ -1,0 +1,186 @@
+/**
+ * Server-side slide renderer for the PowerPoint exporter.
+ *
+ * Produces one self-contained HTML document per card, with the deck theme
+ * inlined as concrete hex colors and font faces. Every style is *inline*
+ * (`style="..."`) because `html2pptx` reads only inline styles — it does not
+ * resolve CSS classes or custom properties, so the reader's class-based markup
+ * would export with default fonts and no colors.
+ *
+ * Font sizes are written in **points**: html2pptx converts `% / em / pt / rem`
+ * but silently ignores `px`, so `pt` is the only unit that survives the trip
+ * into the .pptx.
+ *
+ * Deliberately DOM-free: this is plain string building, so the whole exporter
+ * is deterministic and unit-testable without a browser or a running server
+ * (the brief's Playwright route-render approach would couple export to a live
+ * server and is untestable in isolation; the output here is the same HTML
+ * html2pptx consumes).
+ */
+import type { Block, Inline, Theme } from "@carddeck/core";
+
+/** Slide reference box: 16:9, matching PptxGenJS's 13.333x7.5in wide layout. */
+export const SLIDE_WIDTH = 1280;
+export const SLIDE_HEIGHT = 720;
+
+/** pt font sizes per block role (html2pptx understands pt). */
+const FONT_SIZE = {
+  title: "32pt",
+  heading1: "28pt",
+  heading2: "24pt",
+  heading3: "20pt",
+  body: "14pt",
+  small: "12pt",
+} as const;
+
+function esc(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function hex(color: string): string {
+  return color.replace("#", "");
+}
+
+/** Render an Inline[] run list to html2pptx-friendly inline HTML. */
+function renderInlineHtml(runs: Inline[]): string {
+  let out = "";
+  for (const run of runs) {
+    if (typeof run === "string") {
+      out += esc(run);
+      continue;
+    }
+    let text = esc(run.text);
+    if (run.bold) text = `<b>${text}</b>`;
+    if (run.italic) text = `<i>${text}</i>`;
+    if (run.link) text = `<a href="${esc(run.link)}">${text}</a>`;
+    out += text;
+  }
+  return out;
+}
+
+/** Render a single block to inline-styled semantic HTML. */
+function renderBlockHtml(block: Block, theme: Theme, index: number): string {
+  const ink = hex(theme.colors.ink);
+  const muted = hex(theme.colors.muted);
+  const accent = hex(theme.colors.accent);
+  const display = theme.fonts.display;
+  const body = theme.fonts.body;
+
+  switch (block.type) {
+    case "heading": {
+      const tag = block.level === 1 ? "h1" : block.level === 2 ? "h2" : "h3";
+      const size =
+        block.level === 1 ? FONT_SIZE.heading1 : block.level === 2 ? FONT_SIZE.heading2 : FONT_SIZE.heading3;
+      return `<${tag} style="font-family:${display};font-size:${size};font-weight:bold;color:#${ink};margin:0 0 8pt 0;">${renderInlineHtml(block.text)}</${tag}>`;
+    }
+    case "paragraph":
+      return `<p style="font-family:${body};font-size:${FONT_SIZE.body};color:#${ink};margin:0 0 8pt 0;">${renderInlineHtml(block.text)}</p>`;
+    case "bulletList":
+      return `<ul style="font-family:${body};font-size:${FONT_SIZE.body};color:#${ink};margin:0 0 8pt 0;">${block.items
+        .map((item) => `<li>${renderInlineHtml(item)}</li>`)
+        .join("")}</ul>`;
+    case "numberedList":
+      return `<ol style="font-family:${body};font-size:${FONT_SIZE.body};color:#${ink};margin:0 0 8pt 0;">${block.items
+        .map((item) => `<li>${renderInlineHtml(item)}</li>`)
+        .join("")}</ol>`;
+    case "quote":
+      return `<p style="font-family:${body};font-size:${FONT_SIZE.body};font-style:italic;color:#${muted};margin:0 0 8pt 0;">${renderInlineHtml(block.text)}</p>`;
+    case "callout":
+      return `<p style="font-family:${body};font-size:${FONT_SIZE.small};color:#${ink};background-color:#${accent};margin:0 0 8pt 0;padding:6pt 8pt;">${renderInlineHtml(block.text)}</p>`;
+    case "divider":
+      return `<p style="font-size:${FONT_SIZE.body};color:#${muted};margin:0 0 8pt 0;">———</p>`;
+    case "image": {
+      const caption = block.caption ? esc(block.caption) : "image";
+      return `<p style="font-family:${body};font-size:${FONT_SIZE.small};color:#${muted};margin:0 0 8pt 0;">[image: ${caption}]</p>`;
+    }
+    case "columns":
+      // Flatten columns left-to-right; html2pptx has no column concept.
+      return block.columns
+        .map((col, ci) =>
+          col.map((b, bi) => renderBlockHtml(b, theme, ci * 100 + bi)).join(""),
+        )
+        .join("");
+    case "chart": {
+      const lines = [
+        `${block.kind.toUpperCase()} chart`,
+        block.data.labels.map((l, i) => {
+          const vals = block.data.series.map((s) => s.values[i]);
+          return `${l}: ${vals.join(" / ")}`;
+        }),
+      ];
+      return `<p style="font-family:${body};font-size:${FONT_SIZE.small};color:#${muted};margin:0 0 8pt 0;">${esc(lines.join(" | "))}</p>`;
+    }
+    default: {
+      // Exhaustiveness guard: a new block type without a renderer fails here.
+      const _never: never = block;
+      void _never;
+      return "";
+    }
+  }
+}
+
+/** Minimal HTML document wrapper with the theme inlined on <body>. */
+function wrapDocument(bodyHtml: string, title: string, theme: Theme): string {
+  const ink = hex(theme.colors.ink);
+  const page = hex(theme.colors.page);
+  const body = theme.fonts.body;
+  return [
+    "<!DOCTYPE html>",
+    `<html><head><meta charset="utf-8"><title>${esc(title)}</title>`,
+    `<style>body{margin:0;padding:48px 56px;box-sizing:border-box;}</style>`,
+    `</head>`,
+    `<body style="width:${SLIDE_WIDTH}px;height:${SLIDE_HEIGHT}px;background-color:#${page};color:#${ink};font-family:${body};font-size:${FONT_SIZE.body};">`,
+    bodyHtml,
+    "</body></html>",
+  ].join("");
+}
+
+export interface SlideInput {
+  id: string;
+  title: string;
+  blocks: Block[];
+}
+
+export interface SlideHtml {
+  title: string;
+  html: string;
+}
+
+/** The deck context a slide is rendered for: its title and active theme. */
+export interface SlideDeck {
+  title: string;
+  theme: Theme;
+}
+
+/**
+ * Render one card to a standalone 16:9 HTML document. The card title becomes
+ * the slide heading; each block follows as inline-styled semantic HTML.
+ */
+export async function renderSlideHtml(
+  deck: SlideDeck,
+  card: SlideInput,
+): Promise<string> {
+  const theme = deck.theme;
+  const title = card.title || deck.title;
+  const body = [
+    `<h1 style="font-family:${theme.fonts.display};font-size:${FONT_SIZE.title};font-weight:bold;color:#${hex(theme.colors.ink)};margin:0 0 16pt 0;">${esc(title)}</h1>`,
+    ...card.blocks.map((b, i) => renderBlockHtml(b, theme, i)),
+  ].join("");
+  return wrapDocument(body, title, theme);
+}
+
+/** Render every card to a slide document, preserving order. */
+export async function renderSlidesHtml(
+  deck: SlideDeck,
+  cards: SlideInput[],
+): Promise<SlideHtml[]> {
+  const out: SlideHtml[] = [];
+  for (const card of cards) {
+    out.push({ title: card.title, html: await renderSlideHtml(deck, card) });
+  }
+  return out;
+}

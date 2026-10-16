@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ReaderCard } from "./ReaderCard";
 import { ReaderChrome } from "./ReaderChrome";
 import type { Theme } from "@carddeck/core";
-import { deckCssVars } from "@/lib/themes-presets";
+import { deckCssVars } from "@/lib/theme-styles";
 
 export interface PresentStageProps {
   deckTitle: string;
