@@ -1,0 +1,110 @@
+/*
+ * Carddeck theme layer.
+ *
+ * Every visual value here comes from a CSS custom property injected by
+ * `deckCssVars(theme)`. Nothing is hard-coded, so switching a deck's theme
+ * re-skins the whole document instantly by swapping one style attribute — no
+ * re-render of block content.
+ */
+
+:root {
+  /* Fallback defaults (Light theme) so unthemed chrome still renders. */
+  --page: #f6f7f9;
+  --surface: #ffffff;
+  --ink: #14181f;
+  --accent: #3b6ef6;
+  --muted: #5b6472;
+  --font-display: Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-body: Inter, ui-sans-serif, system-ui, sans-serif;
+  --radius: 14px;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+/* ---- Deck shell: page + body typography ---- */
+
+.deck {
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--font-body);
+  min-height: 100vh;
+}
+
+.deck h1,
+.deck h2,
+.deck h3,
+.deck .card-title {
+  font-family: var(--font-display);
+  color: var(--ink);
+}
+
+.deck a {
+  color: var(--accent);
+}
+
+/* ---- Card: the surface every block sits on ---- */
+
+.card {
+  background: var(--surface);
+  color: var(--ink);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  font-family: var(--font-body);
+}
+
+.card-muted {
+  color: var(--muted);
+}
+
+/* ---- Block utilities ---- */
+
+.callout {
+  border-radius: var(--radius);
+  border-left: 4px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  color: var(--ink);
+}
+
+.callout-warn {
+  border-left-color: #e0a800;
+  background: color-mix(in srgb, #e0a800 14%, var(--surface));
+}
+
+.callout-success {
+  border-left-color: #2e9e5b;
+  background: color-mix(in srgb, #2e9e5b 14%, var(--surface));
+}
+
+.divider {
+  border: none;
+  border-top: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+}
+
+.quote {
+  border-left: 3px solid var(--accent);
+  color: var(--muted);
+}
+
+.chart-bar {
+  background: var(--accent);
+}
+
+.chart-line {
+  stroke: var(--accent);
+}
+
+.chart-donut-slice {
+  fill: var(--accent);
+}
+
+/* ---- Accent chrome shared by editor + reader ---- */
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--surface);
+  border-radius: var(--radius);
+}
+
+.theme-swatch {
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}

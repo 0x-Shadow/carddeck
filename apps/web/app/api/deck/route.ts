@@ -3,11 +3,16 @@ import { getDb } from "@/lib/db";
 import * as t from "@/drizzle/schema";
 import { desc } from "drizzle-orm";
 import { requireUser } from "@/lib/guard";
+import { seedPresetThemes } from "@/lib/themes-presets";
 
 const FORMATS = new Set(["presentation", "document"]);
 
-/** Default theme applied to a new deck when none is requested. */
+/**
+ * Default theme applied to a new deck when none is requested. Seeds the
+ * presets first so a fresh install picks up a real preset rather than a stub.
+ */
 async function defaultThemeId(): Promise<string> {
+  await seedPresetThemes();
   const db = getDb();
   const preset = await db.query.theme.findFirst({
     where: (th, { eq }) => eq(th.isPreset, 1),
