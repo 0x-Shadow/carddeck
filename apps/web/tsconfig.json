@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "preserve",
+    "moduleResolution": "Bundler",
+    "paths": {
+      "@/*": ["./*"]
+    }
+  },
+  "include": ["src", "test", "lib", "drizzle", "app", "components", "next-env.d.ts"],
+  "exclude": ["node_modules"]
+}
