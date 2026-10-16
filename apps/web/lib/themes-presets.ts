@@ -1,7 +1,7 @@
-import type { CSSProperties } from "react";
-import { PRESET_THEMES, applyThemeTokens, type Theme } from "@carddeck/core";
+import { PRESET_THEMES, type Theme } from "@carddeck/core";
 import { getDb } from "./db";
 import * as t from "@/drizzle/schema";
+export { deckCssVars, type DeckCssVars } from "./theme-styles";
 
 /**
  * Theme helpers shared by the editor, reader, present view, and exporters.
@@ -11,23 +11,6 @@ import * as t from "@/drizzle/schema";
  * re-render of block content). `seedPresetThemes` lazily copies the shipped
  * presets into the `theme` table so decks have real theme rows to reference.
  */
-
-/**
- * A style object that may carry CSS custom properties (`--page`, `--ink`, …)
- * alongside normal React CSS keys. React accepts custom properties at runtime;
- * this type just makes them visible to the type checker.
- */
-export type DeckCssVars = CSSProperties & Record<`--${string}`, string | undefined>;
-
-/**
- * Convert a theme (or theme JSON from the DB) to a CSS-custom-property style
- * object. Returns `{}` for a nullish/unparseable theme so callers can spread it
- * unconditionally.
- */
-export function deckCssVars(theme: Theme | null | undefined): DeckCssVars {
-  if (!theme) return {};
-  return applyThemeTokens(theme) as DeckCssVars;
-}
 
 /** Parse a `theme.tokens` JSON string into a `Theme`, or null when invalid. */
 export function parseThemeTokens(

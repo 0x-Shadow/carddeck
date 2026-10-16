@@ -2,18 +2,22 @@
 
 import { use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { PRESET_THEMES, type Block } from "@carddeck/core";
+import { PRESET_THEMES, type Block, type Theme } from "@carddeck/core";
 import {
   CardCanvas,
   type CanvasCard,
   type CanvasDeck,
 } from "@/components/editor/CardCanvas";
 import { ThemePicker } from "@/components/theme/ThemePicker";
+import { ShareControl } from "@/components/share/ShareControl";
 
 interface DeckResponse {
   deck: CanvasDeck & { shareSlug?: string | null; isPublic?: number };
   cards: CanvasCard[];
+  theme?: Theme | null;
 }
+
+type DeckWithShare = CanvasDeck & { shareSlug?: string | null; isPublic?: number };
 
 type PageState = "loading" | "ready" | "unauthorized" | "missing";
 type SaveState = "idle" | "saving" | "error";
@@ -27,8 +31,9 @@ type SaveState = "idle" | "saving" | "error";
 export default function DeckPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
 
-  const [deck, setDeck] = useState<CanvasDeck | null>(null);
+  const [deck, setDeck] = useState<DeckWithShare | null>(null);
   const [cards, setCards] = useState<CanvasCard[]>([]);
+  const [theme, setTheme] = useState<Theme | null>(null);
   const [pageState, setPageState] = useState<PageState>("loading");
   const [saveState, setSaveState] = useState<SaveState>("idle");
 
@@ -46,6 +51,7 @@ export default function DeckPage({ params }: { params: Promise<{ id: string }> }
       const body = (await res.json()) as DeckResponse;
       setDeck(body.deck);
       setCards(body.cards);
+      setTheme(body.theme ?? null);
       setPageState("ready");
     })();
     return () => {
@@ -60,7 +66,7 @@ export default function DeckPage({ params }: { params: Promise<{ id: string }> }
     [],
   );
 
-  const theme = deck ? PRESET_THEMES.find((th) => th.id === deck.themeId) ?? PRESET_THEMES[0] : null;
+  const effectiveTheme = theme ?? PRESET_THEMES[0];
 
   async function patch(url: string, body: unknown): Promise<boolean> {
     setSaveState("saving");
@@ -95,6 +101,8 @@ export default function DeckPage({ params }: { params: Promise<{ id: string }> }
 
   function changeTheme(themeId: string) {
     setDeck((prev) => (prev ? { ...prev, themeId } : prev));
+    // ThemePicker offers presets, so the new skin always resolves from them.
+    setTheme(PRESET_THEMES.find((th) => th.id === themeId) ?? null);
   }
 
   if (pageState === "loading") {
@@ -134,6 +142,14 @@ export default function DeckPage({ params }: { params: Promise<{ id: string }> }
           </span>
         </div>
         <div className="deck-topbar-right">
+          <Link className="btn-secondary" href={`/deck/${id}/present`}>
+            Present
+          </Link>
+          <ShareControl
+            deckId={id}
+            isPublic={deck!.isPublic === 1}
+            shareSlug={deck!.shareSlug ?? null}
+          />
           <ThemePicker deckId={id} themeId={deck!.themeId} onChange={changeTheme} />
         </div>
       </header>
@@ -141,7 +157,7 @@ export default function DeckPage({ params }: { params: Promise<{ id: string }> }
       <CardCanvas
         deck={deck!}
         cards={cards}
-        theme={theme ?? undefined}
+        theme={effectiveTheme ?? undefined}
         onEditCard={editCard}
         onEditTitle={editCardTitle}
       />

@@ -1,6 +1,6 @@
 import { Fragment, type ReactNode } from "react";
 import type { Inline, Theme } from "@carddeck/core";
-import { deckCssVars } from "@/lib/themes-presets";
+import { deckCssVars } from "@/lib/theme-styles";
 
 /**
  * Shared helpers for block renderers.

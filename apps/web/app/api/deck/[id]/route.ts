@@ -3,21 +3,34 @@ import { getDb } from "@/lib/db";
 import * as t from "@/drizzle/schema";
 import { eq, asc } from "drizzle-orm";
 import { resolveOwnedDeck } from "@/lib/deck-access";
+import { rowToTheme } from "@/lib/themes-presets";
 
 type Params = { params: Promise<{ id: string }> };
 
-/** GET /api/deck/[id] -> 200 { deck, cards } */
+/**
+ * GET /api/deck/[id] -> 200 { deck, cards, theme }
+ *
+ * `theme` is the decoded deck theme (preset or custom) so the editor, present
+ * mode, reader, and exporters all skin from one source instead of re-deriving
+ * it client-side.
+ */
 export async function GET(_req: Request, { params }: Params) {
   const { id } = await params;
   const owned = await resolveOwnedDeck(id);
   if (owned.res) return owned.res;
 
   const db = getDb();
-  const cards = await db.query.card.findMany({
-    where: (c, { eq }) => eq(c.deckId, id),
-    orderBy: (c, { asc }) => asc(c.position),
-  });
-  return NextResponse.json({ deck: owned.deck, cards }, { status: 200 });
+  const [cards, themeRow] = await Promise.all([
+    db.query.card.findMany({
+      where: (c, { eq }) => eq(c.deckId, id),
+      orderBy: (c, { asc }) => asc(c.position),
+    }),
+    db.query.theme.findFirst({ where: (th, { eq }) => eq(th.id, owned.deck.themeId) }),
+  ]);
+  return NextResponse.json(
+    { deck: owned.deck, cards, theme: rowToTheme(themeRow) },
+    { status: 200 },
+  );
 }
 
 /** PATCH /api/deck/[id] { title?, themeId?, status? } -> 200 { deck } */

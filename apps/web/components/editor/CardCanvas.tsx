@@ -1,7 +1,7 @@
 "use client";
 
 import type { Block, Theme } from "@carddeck/core";
-import { deckCssVars } from "@/lib/themes-presets";
+import { deckCssVars } from "@/lib/theme-styles";
 import { BlockEditor } from "./BlockEditor";
 
 export interface CanvasCard {
