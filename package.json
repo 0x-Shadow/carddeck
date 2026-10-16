@@ -19,6 +19,9 @@
   },
   "packageManager": "npm@10.0.0",
   "allowScripts": {
-    "esbuild@0.21.5": true
+    "esbuild@0.21.5": true,
+    "esbuild@0.19.12": true,
+    "esbuild@0.18.20": true,
+    "better-sqlite3@11.10.0": true
   }
 }

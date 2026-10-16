@@ -24,9 +24,19 @@ export function makeTestDb(): DB {
 }
 
 let singleton: DB | null = null;
+let override: DB | null = null;
+
+/**
+ * Point `getDb()` at a specific DB. Tests use this to isolate each suite on an
+ * in-memory database. Pass null to clear the override.
+ */
+export function setTestDb(db: DB | null): void {
+  override = db;
+}
 
 /** Memoized app DB, rooted at DATA_DIR (or ./data). Creates the dir if needed. */
 export function getDb(): DB {
+  if (override) return override;
   if (singleton) return singleton;
   const dataDir = process.env.DATA_DIR ?? "./data";
   const fs = require("node:fs") as typeof import("node:fs");

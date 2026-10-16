@@ -12,6 +12,7 @@
   "dependencies": {
     "@carddeck/ai": "*",
     "@carddeck/core": "*",
+    "@node-rs/argon2": "^2.2.2",
     "better-sqlite3": "^13.0.3",
     "drizzle-orm": "^0.36.0",
     "next": "^15.1.0",
