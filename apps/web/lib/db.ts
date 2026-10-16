@@ -12,6 +12,27 @@ export type DB = BetterSQLite3Database<typeof schema>;
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = resolve(MODULE_DIR, "../drizzle");
 
+// apps/web/lib -> repo root. Everything that resolves a path does it against
+// this, never process.cwd(): `next dev` runs with CWD=apps/web while the
+// worker runs with CWD=apps/worker, and both must open the SAME SQLite file.
+export const REPO_ROOT = resolve(MODULE_DIR, "../../..");
+
+/**
+ * Resolve the data directory from the environment.
+ *
+ * Relative `DATA_DIR` values are anchored to the repo root so every process in
+ * the monorepo (web, worker, e2e) agrees on one location no matter where it was
+ * launched from. An absolute value is used verbatim.
+ */
+export function resolveDataDir(
+  env: NodeJS.ProcessEnv = process.env,
+  repoRoot: string = REPO_ROOT,
+): string {
+  const raw = env.DATA_DIR;
+  if (!raw) return join(repoRoot, "data");
+  return resolve(repoRoot, raw);
+}
+
 /**
  * Create an isolated DB for a single test run (in-memory). Runs migrations so
  * the schema exists.
@@ -34,11 +55,11 @@ export function setTestDb(db: DB | null): void {
   override = db;
 }
 
-/** Memoized app DB, rooted at DATA_DIR (or ./data). Creates the dir if needed. */
+/** Memoized app DB, rooted at DATA_DIR (repo-root anchored). Creates the dir if needed. */
 export function getDb(): DB {
   if (override) return override;
   if (singleton) return singleton;
-  const dataDir = process.env.DATA_DIR ?? "./data";
+  const dataDir = resolveDataDir();
   const fs = require("node:fs") as typeof import("node:fs");
   fs.mkdirSync(dataDir, { recursive: true });
   const sqlite = new Database(join(dataDir, "carddeck.sqlite"));

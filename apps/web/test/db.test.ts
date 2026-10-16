@@ -1,6 +1,23 @@
 import { describe, it, expect } from "vitest";
-import { makeTestDb } from "../lib/db";
+import { makeTestDb, resolveDataDir } from "../lib/db";
 import * as t from "../drizzle/schema";
+
+describe("resolveDataDir", () => {
+  it("defaults to <repo-root>/data regardless of process CWD", () => {
+    expect(resolveDataDir({}, "/repo")).toBe("/repo/data");
+  });
+  it("resolves a relative DATA_DIR against the repo root, not the CWD", () => {
+    // apps/web and apps/worker run with different CWDs; both must land on the
+    // same SQLite file or the worker would poll a queue nobody writes to.
+    expect(resolveDataDir({ DATA_DIR: "./data-e2e" }, "/repo")).toBe("/repo/data-e2e");
+  });
+  it("keeps an absolute DATA_DIR as-is", () => {
+    expect(resolveDataDir({ DATA_DIR: "/var/lib/carddeck" }, "/repo")).toBe(
+      "/var/lib/carddeck",
+    );
+  });
+});
+
 
 describe("schema", () => {
   it("round-trips a deck with cards and a theme", async () => {
