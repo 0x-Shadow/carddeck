@@ -4,6 +4,7 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import * as schema from "../drizzle/schema";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
+import fs from "node:fs";
 
 export type DB = BetterSQLite3Database<typeof schema>;
 
@@ -60,7 +61,6 @@ export function getDb(): DB {
   if (override) return override;
   if (singleton) return singleton;
   const dataDir = resolveDataDir();
-  const fs = require("node:fs") as typeof import("node:fs");
   fs.mkdirSync(dataDir, { recursive: true });
   const sqlite = new Database(join(dataDir, "carddeck.sqlite"));
   singleton = drizzle(sqlite, { schema });

@@ -45,7 +45,7 @@ export const deck = sqliteTable("deck", {
   themeId: text("theme_id")
     .notNull()
     .references(() => theme.id),
-  status: text("status").notNull(), // "draft" | "outline" | "generating" | "ready"
+  status: text("status").notNull(), // "draft" | "outline" | "generating" | "ready" | "error"
   isPublic: integer("is_public").notNull().default(0),
   shareSlug: text("share_slug"),
   createdAt: integer("created_at")
@@ -65,6 +65,8 @@ export const card = sqliteTable("card", {
     .references(() => deck.id),
   position: integer("position").notNull(),
   title: text("title").notNull(),
+  /** The outline's intent for this card: "cover" | "body" | "close" | free text. */
+  intent: text("intent").notNull().default("body"),
   /** JSON string of Block[]. */
   blocks: text("blocks").notNull().default("[]"),
   status: text("status").notNull().default("pending"), // "pending" | "ready" | "error"
