@@ -9,6 +9,8 @@ import { PRESET_THEMES, type Block, type Theme } from "@carddeck/core";
 export interface ExportableDeck {
   id: string;
   title: string;
+  /** "presentation" | "document" — selects the PDF page geometry. */
+  format: string;
   theme: Theme;
   cards: Array<{ id: string; title: string; blocks: Block[]; position: number }>;
 }
@@ -51,6 +53,7 @@ export async function loadExportableDeck(
     data: {
       id: deck.id,
       title: deck.title,
+      format: deck.format,
       theme: rowToTheme(themeRow) ?? PRESET_THEMES[0],
       cards: cards.map((c) => ({
         id: c.id,

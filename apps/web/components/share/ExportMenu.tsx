@@ -9,12 +9,13 @@ export interface ExportMenuProps {
 
 interface ExportItem {
   label: string;
-  ext: "pptx" | "potx";
+  ext: "pptx" | "potx" | "pdf";
 }
 
 const ITEMS: ExportItem[] = [
   { label: "PowerPoint (.pptx)", ext: "pptx" },
-  { label: "Theme template(.potx)", ext: "potx" },
+  { label: "PDF (.pdf)", ext: "pdf" },
+  { label: "Theme template (.potx)", ext: "potx" },
 ];
 
 /**

@@ -42,6 +42,15 @@ describe("ExportMenu", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/deck/d1/export/potx"));
   });
 
+  it("offers a PDF export that hits the pdf route", async () => {
+    render(<ExportMenu deckId="d1" deckTitle="Deck" />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^export$/i }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /pdf/i }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/deck/d1/export/pdf"));
+  });
+
   it("surfaces a failed export as an inline error", async () => {
     fetchMock.mockResolvedValue({ ok: false, status: 404 });
     render(<ExportMenu deckId="d1" deckTitle="Deck" />);

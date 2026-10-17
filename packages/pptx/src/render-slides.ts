@@ -156,6 +156,16 @@ export interface SlideDeck {
   theme: Theme;
 }
 
+/** Inner slide content (heading + blocks) without the document wrapper. */
+function buildSlideBody(deck: SlideDeck, card: SlideInput): string {
+  const theme = deck.theme;
+  const title = card.title || deck.title;
+  return [
+    `<h1 style="font-family:${theme.fonts.display};font-size:${FONT_SIZE.title};font-weight:bold;color:#${hex(theme.colors.ink)};margin:0 0 16pt 0;">${esc(title)}</h1>`,
+    ...card.blocks.map((b, i) => renderBlockHtml(b, theme, i)),
+  ].join("");
+}
+
 /**
  * Render one card to a standalone 16:9 HTML document. The card title becomes
  * the slide heading; each block follows as inline-styled semantic HTML.
@@ -164,13 +174,7 @@ export async function renderSlideHtml(
   deck: SlideDeck,
   card: SlideInput,
 ): Promise<string> {
-  const theme = deck.theme;
-  const title = card.title || deck.title;
-  const body = [
-    `<h1 style="font-family:${theme.fonts.display};font-size:${FONT_SIZE.title};font-weight:bold;color:#${hex(theme.colors.ink)};margin:0 0 16pt 0;">${esc(title)}</h1>`,
-    ...card.blocks.map((b, i) => renderBlockHtml(b, theme, i)),
-  ].join("");
-  return wrapDocument(body, title, theme);
+  return wrapDocument(buildSlideBody(deck, card), card.title || deck.title, deck.theme);
 }
 
 /** Render every card to a slide document, preserving order. */
@@ -183,4 +187,71 @@ export async function renderSlidesHtml(
     out.push({ title: card.title, html: await renderSlideHtml(deck, card) });
   }
   return out;
+}
+
+export type PrintFormat = "presentation" | "document";
+
+export interface PrintOptions {
+  /** `presentation` → one 16:9 page per card; `document` → flowing A4 text. */
+  format?: PrintFormat;
+}
+
+/**
+ * Build one print document for a whole deck (PDF export).
+ *
+ * Uses CSS paged media: `@page` sets the page geometry and Chromium's
+ * print-to-PDF (`page.pdf({ preferCSSPageSize: true })`) honours it, so
+ * presentation decks come out one exact 16:9 slide per page and document
+ * decks flow across A4 pages — no server round-trip, no browser navigation,
+ * just `page.setContent` on this string.
+ *
+ * Themed colors/fonts are repeated on every slide section because element
+ * backgrounds do not carry across print pages unless painted per page.
+ */
+export async function renderPrintHtml(
+  deck: SlideDeck,
+  cards: SlideInput[],
+  opts: PrintOptions = {},
+): Promise<string> {
+  const format: PrintFormat = opts.format ?? "presentation";
+  const theme = deck.theme;
+  const ink = hex(theme.colors.ink);
+  const page = hex(theme.colors.page);
+  const docTitle = esc(deck.title);
+  const bodyFont = theme.fonts.body;
+
+  if (format === "document") {
+    return [
+      "<!DOCTYPE html>",
+      `<html><head><meta charset="utf-8"><title>${docTitle}</title>`,
+      `<style>` +
+        `@page { size: A4; margin: 16mm 14mm; }` +
+        `html,body{margin:0;padding:0;}` +
+        `body{background-color:#${page};color:#${ink};font-family:${bodyFont};font-size:${FONT_SIZE.body};}` +
+        `.print-doc>section{margin:0 0 14pt 0;}` +
+        `</style></head>`,
+      `<body><div class="print-doc">${cards
+        .map((c) => `<section>${buildSlideBody(deck, c)}</section>`)
+        .join("")}</div></body></html>`,
+    ].join("");
+  }
+
+  // Presentation: exact 16:9 pages, one per card.
+  const pageStyle =
+    `width:${SLIDE_WIDTH}px;height:${SLIDE_HEIGHT}px;` +
+    `background-color:#${page};color:#${ink};` +
+    `font-family:${bodyFont};font-size:${FONT_SIZE.body};` +
+    `padding:48px 56px;box-sizing:border-box;overflow:hidden;`;
+  return [
+    "<!DOCTYPE html>",
+    `<html><head><meta charset="utf-8"><title>${docTitle}</title>`,
+    `<style>` +
+      `@page { size: ${SLIDE_WIDTH}px ${SLIDE_HEIGHT}px; margin: 0; }` +
+      `html,body{margin:0;padding:0;}` +
+      `.slide-page{${pageStyle}page-break-after:always;break-after:page;}` +
+      `</style></head>`,
+    `<body>${cards
+      .map((c) => `<section class="slide-page" style="${pageStyle}">${buildSlideBody(deck, c)}</section>`)
+      .join("")}</body></html>`,
+  ].join("");
 }
