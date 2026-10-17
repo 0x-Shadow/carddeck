@@ -115,6 +115,7 @@ double-mount; the rejection currently surfaces as a Next dev overlay
 type MotionPreset = "none" | "subtle" | "punchy" | "cinematic";
 type TransitionKind = "fade" | "push" | "wipe" | "cover" | "split";
 type EntranceKind = "fade" | "wipeUp" | "flyLeft" | "zoom";
+type SlideShapeCount = { shapes: number };      // shapes on one slide
 type SlideMotion = { transition: TransitionKind;
                      builds: Array<{ effect: EntranceKind; delayMs: number }> };
 type MotionPlan = { preset: MotionPreset; slides: SlideMotion[] };
@@ -128,14 +129,20 @@ type MotionPlan = { preset: MotionPreset; slides: SlideMotion[] };
   fly/zoom, `punchy` short + wipe/zoom, `subtle` fade-only.
 - Deck row gains `motion` (text, JSON `MotionPlan | null`). `deck.motion`
   null ⇒ treat as `{ preset: "none", slides: [] }`.
+- Deck PATCH contract (two explicit shapes):
+  - `{ motionPreset: "subtle" }` — server derives the full plan with
+    `planMotion` from the deck's current card shape counts (this is what
+    MotionPicker and MCP `set_motion` send);
+  - `{ motion: MotionPlan }` — full plan (AI / MCP power users), validated
+    with `validateMotionPlan` against the deck's current card count.
 
 ### Validation (packages/ai + PATCH)
 
 - `validateMotionPlan(raw, slideCount)` — whitelists preset/transition/
   entrance values, caps `slides` at slideCount, caps builds per slide at
   shapeCount + 2, clamps delays 0–5000 ms; throws `AIValidationError` on
-  non-object junk. Deck `PATCH` accepts `motion` (object) or `preset`
-  shorthand, validating through this function.
+  non-object junk. Deck `PATCH` accepts either `motionPreset` (server
+  derives the plan) or a full `motion` plan (validated) — see §2.
 
 ### UI
 

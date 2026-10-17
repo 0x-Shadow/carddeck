@@ -4,6 +4,7 @@ import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PresentStage } from "@/components/reader/PresentStage";
 import { PRESET_THEMES, type Theme } from "@carddeck/core";
+import { isAbortError } from "@/lib/abort";
 import Link from "next/link";
 
 interface PresentData {
@@ -30,11 +31,19 @@ export default function PresentPage({ params }: { params: Promise<{ id: string }
   useEffect(() => {
     const ctrl = new AbortController();
     (async () => {
-      const res = await fetch(`/api/deck/${id}`, { signal: ctrl.signal });
-      if (res.status === 401) return setState("unauthorized");
-      if (res.status === 404 || !res.ok) return setState("missing");
-      setData((await res.json()) as PresentData);
-      setState("ready");
+      try {
+        const res = await fetch(`/api/deck/${id}`, { signal: ctrl.signal });
+        if (res.status === 401) return setState("unauthorized");
+        if (res.status === 404 || !res.ok) return setState("missing");
+        setData((await res.json()) as PresentData);
+        setState("ready");
+      } catch (err) {
+        // An abort is our own cleanup (unmount / StrictMode remount), not a
+        // failure — surfacing it would blame the user for navigating away.
+        // Anything else means the deck couldn't load at all.
+        if (isAbortError(err)) return;
+        setState("missing");
+      }
     })();
     return () => ctrl.abort();
   }, [id]);
