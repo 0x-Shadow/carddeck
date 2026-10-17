@@ -58,6 +58,26 @@ export const deck = sqliteTable("deck", {
     .$defaultFn(now),
 });
 
+/**
+ * An uploaded image for a deck. Bytes live on disk under
+ * `DATA_DIR/assets/<deckId>/<id>.<ext>`; this row is the index + access
+ * record. Deleting a deck cascades to its assets.
+ */
+export const asset = sqliteTable("asset", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => randomUUID()),
+  deckId: text("deck_id")
+    .notNull()
+    .references(() => deck.id, { onDelete: "cascade" }),
+  mime: text("mime").notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  originalName: text("original_name"),
+  createdAt: integer("created_at")
+    .notNull()
+    .$defaultFn(now),
+});
+
 export const card = sqliteTable("card", {
   id: text("id")
     .primaryKey()
