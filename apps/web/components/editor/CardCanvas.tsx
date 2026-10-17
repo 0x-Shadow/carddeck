@@ -102,6 +102,7 @@ export function CardCanvas({
             {card.status === "ready" ? (
               <>
                 <BlockEditor
+                  deckId={deck.id}
                   blocks={parseBlocks(card.blocks)}
                   theme={theme}
                   onChange={(next) => onEditCard?.(card.id, next)}

@@ -5,8 +5,11 @@ import type { Block, Inline, Theme } from "@carddeck/core";
 import { inlineToPlainText } from "@carddeck/core";
 import { BlockRenderer } from "@/components/blocks";
 import { BlockToolbar, RowToolbar, type InsertKind } from "./BlockToolbar";
+import { ImageBlockEditor } from "./ImageBlockEditor";
 
 export interface BlockEditorProps {
+  /** Owning deck id — image uploads post to `/api/deck/<deckId>/assets`. */
+  deckId: string;
   blocks: Block[];
   onChange: (blocks: Block[]) => void;
   theme?: Theme;
@@ -129,7 +132,7 @@ function makeBlock(kind: InsertKind): Block {
  * rendered preview and can be deleted or followed by a new block. Every change
  * reports a brand-new array, never a mutation of `blocks`.
  */
-export function BlockEditor({ blocks, onChange, theme }: BlockEditorProps) {
+export function BlockEditor({ deckId, blocks, onChange, theme }: BlockEditorProps) {
   const [selected, setSelected] = useState(0);
 
   const apply = (next: Block[]) => onChange(next);
@@ -186,7 +189,15 @@ export function BlockEditor({ blocks, onChange, theme }: BlockEditorProps) {
       );
     }
 
-    return <BlockRenderer block={block} theme={theme} />;
+    return block.type === "image" ? (
+      <ImageBlockEditor
+        deckId={deckId}
+        block={block}
+        onChange={(next) => apply(blocks.map((b, i) => (i === index ? next : b)))}
+      />
+    ) : (
+      <BlockRenderer block={block} theme={theme} />
+    );
   };
 
   return (

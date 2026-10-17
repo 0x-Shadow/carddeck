@@ -140,7 +140,7 @@ describe("BlockEditor", () => {
 
   it("renders one editor row per block and reports text edits", () => {
     const onChange = vi.fn();
-    render(<BlockEditor blocks={blocks} onChange={onChange} />);
+    render(<BlockEditor deckId="d1" blocks={blocks} onChange={onChange} />);
 
     const textareas = screen.getAllByRole("textbox");
     expect(textareas.length).toBeGreaterThanOrEqual(2);
@@ -155,7 +155,7 @@ describe("BlockEditor", () => {
 
   it("inserts a new block from the toolbar after the selected one", () => {
     const onChange = vi.fn();
-    render(<BlockEditor blocks={blocks} onChange={onChange} />);
+    render(<BlockEditor deckId="d1" blocks={blocks} onChange={onChange} />);
 
     fireEvent.click(screen.getByRole("button", { name: /add callout/i }));
     expect(onChange).toHaveBeenCalledTimes(1);
@@ -167,7 +167,7 @@ describe("BlockEditor", () => {
 
   it("deletes the selected block", () => {
     const onChange = vi.fn();
-    render(<BlockEditor blocks={blocks} onChange={onChange} />);
+    render(<BlockEditor deckId="d1" blocks={blocks} onChange={onChange} />);
 
     fireEvent.click(screen.getAllByRole("button", { name: /delete block/i })[1]);
     expect(onChange).toHaveBeenCalledTimes(1);
@@ -178,7 +178,7 @@ describe("BlockEditor", () => {
 
   it("toggles bold across the selected block's text runs", () => {
     const onChange = vi.fn();
-    render(<BlockEditor blocks={blocks} onChange={onChange} />);
+    render(<BlockEditor deckId="d1" blocks={blocks} onChange={onChange} />);
 
     fireEvent.click(screen.getAllByRole("button", { name: /^bold$/i })[0]);
     expect(onChange).toHaveBeenCalledTimes(1);
