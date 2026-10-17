@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateOutline, validateBlocks, AIValidationError } from "../src/validate";
+import { validateOutline, validateBlocks, validateMotionPlan, AIValidationError } from "../src/validate";
 
 describe("output validation", () => {
   it("accepts a well-formed outline", () => {
@@ -15,6 +15,49 @@ describe("output validation", () => {
   });
   it("rejects a block with an unknown type", () => {
     expect(() => validateBlocks([{ type: "sparkle" }])).toThrow(AIValidationError);
+  });
+
+  it("validateMotionPlan rejects junk and unknown presets", () => {
+    expect(() => validateMotionPlan("junk", 3)).toThrow(AIValidationError);
+    expect(() => validateMotionPlan({ preset: "nope", slides: [] }, 3)).toThrow(
+      AIValidationError,
+    );
+    expect(() =>
+      validateMotionPlan({ preset: "subtle", slides: [{ transition: "warp", builds: [] }] }, 3),
+    ).toThrow(AIValidationError);
+  });
+
+  it("validateMotionPlan clamps delays and caps slides and builds", () => {
+    const plan = validateMotionPlan(
+      {
+        preset: "cinematic",
+        slides: Array.from({ length: 5 }, () => ({
+          transition: "fade",
+          builds: Array.from({ length: 20 }, (_, i) => ({
+            effect: "fade",
+            delayMs: i === 0 ? -50 : 99999,
+          })),
+        })),
+      },
+      3,
+    );
+    expect(plan.slides).toHaveLength(3);
+    for (const slide of plan.slides) {
+      expect(slide.builds.length).toBeLessThanOrEqual(12);
+      expect(slide.builds[0].delayMs).toBe(0); // -50 clamped up
+      expect(slide.builds[1].delayMs).toBe(5000); // 99999 clamped down
+    }
+  });
+
+  it("validateMotionPlan passes a well-formed plan through", () => {
+    const plan = validateMotionPlan(
+      { preset: "punchy", slides: [{ transition: "push", builds: [{ effect: "zoom", delayMs: 300 }] }] },
+      2,
+    );
+    expect(plan).toEqual({
+      preset: "punchy",
+      slides: [{ transition: "push", builds: [{ effect: "zoom", delayMs: 300 }] }],
+    });
   });
 
   it("coerces malformed payloads instead of letting renderers crash", () => {

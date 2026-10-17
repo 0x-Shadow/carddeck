@@ -15,6 +15,13 @@
       "when": 1792175180999,
       "tag": "0001_parallel_devos",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1792232828451,
+      "tag": "0002_daily_sharon_carter",
+      "breakpoints": true
     }
   ]
 }

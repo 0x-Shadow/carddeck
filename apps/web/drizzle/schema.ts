@@ -48,6 +48,8 @@ export const deck = sqliteTable("deck", {
   status: text("status").notNull(), // "draft" | "outline" | "generating" | "ready" | "error"
   isPublic: integer("is_public").notNull().default(0),
   shareSlug: text("share_slug"),
+  /** JSON MotionPlan | null — how the deck animates (web present + PPTX). */
+  motion: text("motion"),
   createdAt: integer("created_at")
     .notNull()
     .$defaultFn(now),

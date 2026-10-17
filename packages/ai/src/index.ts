@@ -12,7 +12,7 @@ export type {
 } from "./types";
 export { StubProvider, type StubOptions } from "./stub";
 export { OpenAIProvider, AIProviderError } from "./openai";
-export { AIValidationError, validateBlocks, validateOutline } from "./validate";
+export { AIValidationError, validateBlocks, validateMotionPlan, validateOutline } from "./validate";
 
 interface Env {
   OPENAI_API_KEY?: string;

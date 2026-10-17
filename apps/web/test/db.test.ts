@@ -20,6 +20,16 @@ describe("resolveDataDir", () => {
 
 
 describe("schema", () => {
+  it("migrations add the deck.motion column", () => {
+    const db = makeTestDb();
+    // drizzle's migrate() applied every migration in the folder: the motion
+    // column must exist on a fresh database.
+    const rows = db.all("SELECT name FROM pragma_table_info('deck')") as Array<{
+      name: string;
+    }>;
+    expect(rows.some((r) => r.name === "motion")).toBe(true);
+  });
+
   it("round-trips a deck with cards and a theme", async () => {
     const db = makeTestDb();
     const userId = (

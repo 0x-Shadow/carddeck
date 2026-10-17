@@ -1,4 +1,4 @@
-import type { Block, Inline } from "@carddeck/core";
+import type { Block, Inline, MotionPlan, MotionPreset, TransitionKind, EntranceKind } from "@carddeck/core";
 
 const BLOCK_TYPES = new Set([
   "heading",
@@ -200,4 +200,57 @@ export function validateBlocks(raw: unknown): Block[] {
     if (normalized) out.push(normalized);
   }
   return out;
+}
+
+const MOTION_PRESETS = new Set(["none", "subtle", "punchy", "cinematic"]);
+const MOTION_TRANSITIONS = new Set(["fade", "push", "wipe", "cover", "split"]);
+const MOTION_ENTRANCES = new Set(["fade", "wipeUp", "flyLeft", "zoom"]);
+const MAX_MOTION_SLIDE_BUILDS = 12;
+
+/**
+ * Validate + normalize a motion plan from untrusted JSON (AI response, MCP
+ * power-user input, deck PATCH body). Throws on a non-object, an unknown
+ * preset/transition/effect — those are schema violations the model must not
+ * get away with — but clamps delays (0–5000 ms), caps slides at the deck's
+ * card count, and caps builds per slide at 12.
+ */
+export function validateMotionPlan(raw: unknown, slideCount: number): MotionPlan {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    throw new AIValidationError(`motion must be an object, got ${typeof raw}`);
+  }
+  const obj = raw as Record<string, unknown>;
+  if (typeof obj.preset !== "string" || !MOTION_PRESETS.has(obj.preset)) {
+    throw new AIValidationError(`unknown motion preset: ${String(obj.preset)}`);
+  }
+  const preset = obj.preset as MotionPreset;
+  const rawSlides = Array.isArray(obj.slides) ? obj.slides : [];
+  const slides = rawSlides.slice(0, Math.max(0, slideCount)).map((s, i) => {
+    if (typeof s !== "object" || s === null) {
+      throw new AIValidationError(`motion.slides[${i}] must be an object`);
+    }
+    const slide = s as Record<string, unknown>;
+    if (typeof slide.transition !== "string" || !MOTION_TRANSITIONS.has(slide.transition)) {
+      throw new AIValidationError(
+        `motion.slides[${i}] has unknown transition: ${String(slide.transition)}`,
+      );
+    }
+    const rawBuilds = Array.isArray(slide.builds) ? slide.builds : [];
+    const builds = rawBuilds.slice(0, MAX_MOTION_SLIDE_BUILDS).map((b, j) => {
+      if (typeof b !== "object" || b === null) {
+        throw new AIValidationError(`motion.slides[${i}].builds[${j}] must be an object`);
+      }
+      const build = b as Record<string, unknown>;
+      if (typeof build.effect !== "string" || !MOTION_ENTRANCES.has(build.effect)) {
+        throw new AIValidationError(
+          `motion.slides[${i}].builds[${j}] has unknown effect: ${String(build.effect)}`,
+        );
+      }
+      const delayRaw =
+        typeof build.delayMs === "number" && Number.isFinite(build.delayMs) ? build.delayMs : 0;
+      const delayMs = Math.max(0, Math.min(5000, Math.round(delayRaw)));
+      return { effect: build.effect as EntranceKind, delayMs };
+    });
+    return { transition: slide.transition as TransitionKind, builds };
+  });
+  return { preset, slides };
 }
