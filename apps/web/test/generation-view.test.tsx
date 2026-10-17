@@ -146,6 +146,20 @@ describe("GenerationView", () => {
     expect(onDone).not.toHaveBeenCalled();
   });
 
+  it("forwards per-card retries to the parent (error cards render a working Retry)", () => {
+    const onRetryCard = vi.fn();
+    setup({
+      onRetryCard,
+      cards: [
+        { id: "c0", position: 0, title: "Cover", blocks: "[]", status: "ready" },
+        { id: "c1", position: 1, title: "Trouble", blocks: "[]", status: "error" },
+      ],
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /retry this card/i }));
+    expect(onRetryCard).toHaveBeenCalledWith("c1");
+  });
+
   it("sends a cancel PATCH when Stop is clicked", async () => {
     const { source } = setup();
 

@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "workspaces": [
     "packages/*",
-    "apps/*"
+    "apps/*",
+    "e2e"
   ],
   "scripts": {
     "test": "turbo run test",

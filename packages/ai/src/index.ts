@@ -10,7 +10,7 @@ export type {
   ReviseRequest,
   ReviseResult,
 } from "./types";
-export { StubProvider } from "./stub";
+export { StubProvider, type StubOptions } from "./stub";
 export { OpenAIProvider, AIProviderError } from "./openai";
 export { AIValidationError, validateBlocks, validateOutline } from "./validate";
 
@@ -18,6 +18,8 @@ interface Env {
   OPENAI_API_KEY?: string;
   OPENAI_MODEL?: string;
   OPENAI_BASE_URL?: string;
+  /** "1" arms the stub's per-card failure hook (E2E test runs only). */
+  CARDDECK_E2E_HOOKS?: string;
 }
 
 /**
@@ -31,7 +33,7 @@ interface Env {
 export function createProvider(env: Env | NodeJS.ProcessEnv = process.env): AIProvider {
   const apiKey = env.OPENAI_API_KEY?.trim();
   if (!apiKey) {
-    return new StubProvider();
+    return new StubProvider({ failureHook: env.CARDDECK_E2E_HOOKS === "1" });
   }
   return new OpenAIProvider({
     apiKey,

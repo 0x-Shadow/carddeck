@@ -8,8 +8,9 @@ import type { DeckFormat } from "@carddeck/ai";
 
 type Params = { params: Promise<{ id: string }> };
 
-export const MAX_PROMPT_CHARS = 4000;
-export const MAX_CARDS = 30;
+/** Validation limits, module-private: route files may only export HTTP verbs. */
+const MAX_PROMPT_CHARS = 4000;
+const MAX_CARDS = 30;
 const MAX_TONE_CHARS = 200;
 
 interface OutlineBody {
@@ -22,7 +23,7 @@ interface OutlineBody {
  * Validate the outline request. Returns the normalized input, or a ready 400
  * response when a field is missing or out of range.
  */
-export function parseOutlineRequest(body: OutlineBody | null):
+function parseOutlineRequest(body: OutlineBody | null):
   | { input: { prompt: string; numCards: number; tone?: string }; res?: undefined }
   | { input?: undefined; res: NextResponse } {
   const bad = (error: string) => ({

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { Theme } from "@carddeck/core";
 import { CardCanvas, type CanvasCard } from "./CardCanvas";
 
 export interface GenerationViewProps {
@@ -8,12 +9,20 @@ export interface GenerationViewProps {
   jobId: string;
   /** Cards as they stand right now (pending ones render as skeletons). */
   cards: CanvasCard[];
+  /** Deck theme so the canvas stays skinned while the run streams. */
+  theme?: Theme;
   /** Report the merged card list upward whenever a `card` event lands. */
   onCardsChange: (cards: CanvasCard[]) => void;
   /** Called when the stream reaches a terminal state. */
   onDone: (status: "done" | "cancelled") => void;
   /** Called with the fresh jobId when the user retries a failed run. */
   onRetry?: (jobId: string) => void;
+  /**
+   * Per-card retry while the run is (or just went) live: forwarded to the
+   * embedded CardCanvas so a card in `error` can be re-requested without
+   * restarting the whole job.
+   */
+  onRetryCard?: (cardId: string) => void;
 }
 
 type RunStatus = "running" | "done" | "cancelled" | "error";
@@ -34,9 +43,11 @@ export function GenerationView({
   deckId,
   jobId,
   cards,
+  theme,
   onCardsChange,
   onDone,
   onRetry,
+  onRetryCard,
 }: GenerationViewProps) {
   const [merged, setMerged] = useState<CanvasCard[]>(cards);
   const [progress, setProgress] = useState({ done: 0, total: cards.length });
@@ -184,6 +195,8 @@ export function GenerationView({
       <CardCanvas
         deck={{ id: deckId, title: "", format: "presentation", status: "generating", themeId: "" }}
         cards={merged}
+        theme={theme}
+        onRetryCard={onRetryCard}
       />
     </div>
   );

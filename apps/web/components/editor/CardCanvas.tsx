@@ -25,6 +25,8 @@ export interface CardCanvasProps {
   deck: CanvasDeck;
   cards: CanvasCard[];
   theme?: Theme;
+  /** Copy for not-yet-generated cards (outline mode uses different words). */
+  pendingLabel?: string;
   /** Persist a card's edited blocks. */
   onEditCard?: (cardId: string, blocks: Block[]) => void;
   /** Persist a card's edited title. */
@@ -50,7 +52,7 @@ function parseBlocks(raw: string): Block[] {
  * offer a per-card retry, and `pending` cards show a generating state so a
  * half-streamed deck never looks finished.
  */
-export function CardCanvas({ deck, cards, theme, onEditCard, onEditTitle, onRetryCard }: CardCanvasProps) {
+export function CardCanvas({ deck, cards, theme, pendingLabel, onEditCard, onEditTitle, onRetryCard }: CardCanvasProps) {
   return (
     <div
       className="deck"
@@ -101,7 +103,7 @@ export function CardCanvas({ deck, cards, theme, onEditCard, onEditTitle, onRetr
               </div>
             ) : (
               <div className="card-pending" aria-live="polite">
-                <p>Card is still generating…</p>
+                <p>{pendingLabel ?? "Card is still generating…"}</p>
                 <div className="skeleton" />
               </div>
             )}

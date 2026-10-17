@@ -234,6 +234,31 @@ describe("GET /api/generation/[jobId]/stream (SSE)", () => {
     }
   });
 
+  it("emits a card event for a failed card (per-card retry surface)", async () => {
+    const { jobId, deckId, userId } = await seedGeneratingDeck(2);
+    useSession(userId);
+
+    const stream = await openStream(jobId);
+    try {
+      await stream.next(); // initial progress snapshot
+
+      const db = getDb();
+      const card = await db.query.card.findFirst({
+        where: (c, { eq }) => eq(c.deckId, deckId),
+      });
+      await db.update(t.card).set({ status: "error" }).where(eq(t.card.id, card!.id));
+      await updateJob(jobId, { progress: JSON.stringify({ done: 1, total: 2 }) });
+
+      const block = await stream.next();
+      expect(block).toContain("event: card");
+      const payload = JSON.parse(block.split("data: ")[1]);
+      expect(payload.id).toBe(card!.id);
+      expect(payload.status).toBe("error");
+    } finally {
+      await stream.cancel();
+    }
+  });
+
   it("emits error when the job fails", async () => {
     const { jobId, userId } = await seedGeneratingDeck(1);
     useSession(userId);

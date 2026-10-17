@@ -55,30 +55,48 @@ export async function PATCH(req: Request, { params }: Params) {
   }
 
   const db = getDb();
-  // Guarded update: if a worker races us to a terminal state, match nothing.
-  const updated = await db
-    .update(t.generationJob)
-    .set({ status: "cancelled", updatedAt: Date.now() })
-    .where(
-      and(
-        eq(t.generationJob.id, jobId),
-        inArray(t.generationJob.status, ["pending", "running"]),
-      ),
-    )
-    .returning({ id: t.generationJob.id });
-  if (updated.length === 0) {
-    return NextResponse.json({ error: "job already finished" }, { status: 409 });
-  }
-
-  // With no worker to finish it, "generating" would strand the deck.
+  // With no worker to finish it, "generating" would strand the deck — count
+  // the cards first so we know which editable status to return to.
   const cards = await db.query.card.findMany({
     where: (c, { eq }) => eq(c.deckId, owned.job.deckId),
     columns: { id: true },
   });
-  await db
-    .update(t.deck)
-    .set({ status: cards.length > 0 ? "outline" : "draft", updatedAt: Date.now() })
-    .where(eq(t.deck.id, owned.job.deckId));
+  const deckStatus = cards.length > 0 ? "outline" : "draft";
+
+  // The guarded job flip and the deck settle must land together: a client
+  // that reloads the instant it observes `cancelled` must never see a
+  // terminal job while the deck still reads "generating" — it would treat it
+  // as a dropped stream and auto-restart the run it just stopped. One
+  // immediate transaction makes the pair visible atomically; the guard inside
+  // it still loses cleanly if a worker raced us to a terminal state.
+  const cancelled = db.transaction(
+    (tx) => {
+      const guard = tx
+        .select({ id: t.generationJob.id })
+        .from(t.generationJob)
+        .where(
+          and(
+            eq(t.generationJob.id, jobId),
+            inArray(t.generationJob.status, ["pending", "running"]),
+          ),
+        )
+        .get();
+      if (!guard) return false;
+      tx.update(t.generationJob)
+        .set({ status: "cancelled", updatedAt: Date.now() })
+        .where(eq(t.generationJob.id, jobId))
+        .run();
+      tx.update(t.deck)
+        .set({ status: deckStatus, updatedAt: Date.now() })
+        .where(eq(t.deck.id, owned.job.deckId))
+        .run();
+      return true;
+    },
+    { behavior: "immediate" },
+  );
+  if (!cancelled) {
+    return NextResponse.json({ error: "job already finished" }, { status: 409 });
+  }
 
   return NextResponse.json({ status: "cancelled" }, { status: 200 });
 }

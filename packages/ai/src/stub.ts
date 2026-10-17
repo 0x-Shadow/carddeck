@@ -32,6 +32,20 @@ const FILLER_SENTENCES = [
   "Every metric here is tracked weekly and reviewed monthly.",
 ];
 
+export interface StubOptions {
+  /**
+   * E2E test hook. When enabled, `generateCard` throws the *first* time it
+   * sees an outline title containing `[fail]` (keyed by card id, so a retry
+   * succeeds) — letting end-to-end suites exercise the per-card error and
+   * retry path with a deterministic provider. Off unless the process runs
+   * with `CARDDECK_E2E_HOOKS=1`.
+   */
+  failureHook?: boolean;
+}
+
+/** Card ids that already failed under the hook (one failure per id, ever). */
+const hookFailedOnce = new Set<string>();
+
 /**
  * A deterministic, offline AI provider. Same input → same output, no network,
  * no API key. Used by tests and as the dev default so the app is fully usable
@@ -39,6 +53,11 @@ const FILLER_SENTENCES = [
  */
 export class StubProvider implements AIProvider {
   readonly name = "stub";
+  private readonly opts: StubOptions;
+
+  constructor(opts: StubOptions = {}) {
+    this.opts = opts;
+  }
 
   async generateOutline(req: OutlineRequest): Promise<OutlineCard[]> {
     const seed = hash(req.prompt + req.format + req.tone);
@@ -54,6 +73,17 @@ export class StubProvider implements AIProvider {
   }
 
   async generateCard(req: CardRequest): Promise<Block[]> {
+    // E2E failure hook: fail the first attempt for flagged titles so suites
+    // can watch a card error and then recover through per-card retry.
+    if (
+      this.opts.failureHook &&
+      req.outline.title.includes("[fail]") &&
+      !hookFailedOnce.has(req.outline.id)
+    ) {
+      hookFailedOnce.add(req.outline.id);
+      throw new Error(`forced card failure for "${req.outline.title}" (test hook)`);
+    }
+
     const seed = hash(req.outline.title + req.themeName);
     if (req.outline.intent === "cover") {
       return [

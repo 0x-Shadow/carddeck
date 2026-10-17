@@ -57,11 +57,12 @@ async function setProgress(jobId: string, done: number, total: number): Promise<
 /** Mark a job failed and flag the deck so the UI stops waiting on it. */
 async function failJob(db: DB, job: Job, err: unknown): Promise<void> {
   const message = err instanceof Error ? err.message : String(err);
+  // Deck first, job second: clients watch the job row (SSE `done`/`error`), so
+  // by the time they see a terminal job the deck must already be settled —
+  // otherwise a reload on `done` could still read "generating" and auto-start
+  // a second run.
+  await setDeckStatus(db, job.deckId, "error");
   await updateJob(job.id, { status: "error", error: message });
-  await db
-    .update(t.deck)
-    .set({ status: "error", updatedAt: Date.now() })
-    .where(eq(t.deck.id, job.deckId));
 }
 
 async function setDeckStatus(db: DB, deckId: string, status: string): Promise<void> {
@@ -151,8 +152,8 @@ export async function runCardsJob(job: Job, deps: PipelineDeps = {}): Promise<vo
     if (total === 0) {
       // Everything is already generated — nothing to do but close out the job.
       await setProgress(job.id, 0, 0);
-      await updateJob(job.id, { status: "done", error: null });
       await setDeckStatus(db, job.deckId, "ready");
+      await updateJob(job.id, { status: "done", error: null });
       return;
     }
 
@@ -215,17 +216,19 @@ export async function runCardsJob(job: Job, deps: PipelineDeps = {}): Promise<vo
     // A cancel mid-flight wins over anything we'd otherwise write.
     if (await isCancelled(db, job.id)) return;
 
+    // Deck first, then job, in both branches: see failJob's note — the deck
+    // must be settled before the job row turns terminal for SSE watchers.
     if (failures > 0) {
+      await setDeckStatus(db, job.deckId, "error");
       await updateJob(job.id, {
         status: "error",
         error: `${failures} of ${total} card(s) failed: ${lastError}`,
       });
-      await setDeckStatus(db, job.deckId, "error");
       return;
     }
 
-    await updateJob(job.id, { status: "done", error: null });
     await setDeckStatus(db, job.deckId, "ready");
+    await updateJob(job.id, { status: "done", error: null });
   } catch (err) {
     await failJob(db, job, err);
   }
@@ -239,11 +242,18 @@ export async function dispatchJob(job: Job, deps: PipelineDeps = {}): Promise<vo
         return await runOutlineJob(job, deps);
       case "cards":
         return await runCardsJob(job, deps);
-      default:
+      default: {
+        // Unknown stage: settle deck + job together (deck first — failJob's rule).
+        const db = deps.db ?? getDb();
+        await setDeckStatus(db, job.deckId, "error");
         await updateJob(job.id, { status: "error", error: `unknown stage "${job.stage}"` });
+      }
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    // Same ordering rule as failJob: settle the deck, then the job.
+    const db = deps.db ?? getDb();
+    await setDeckStatus(db, job.deckId, "error").catch(() => {});
     await updateJob(job.id, { status: "error", error: message }).catch(() => {});
   }
 }

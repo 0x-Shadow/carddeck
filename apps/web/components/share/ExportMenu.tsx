@@ -65,7 +65,9 @@ export function ExportMenu({ deckId, deckTitle }: ExportMenuProps) {
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
+      // Revoke only once the browser has had time to start pulling the blob —
+      // revoking synchronously here cancels the download outright.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "export failed");
     } finally {

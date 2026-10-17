@@ -4,3 +4,15 @@ data/
 *.log
 .env
 
+# Build artifacts
+.next/
+.turbo/
+*.tsbuildinfo
+
+# E2E workspace
+e2e/.data/
+test-results/
+playwright-report/
+
+# Local planning/notes
+.superpowers/
