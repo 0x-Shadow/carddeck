@@ -183,4 +183,77 @@ describe("deck + card REST", () => {
     });
     expect(remaining).toHaveLength(0);
   });
+
+  it("PATCH /api/deck/[id] rejects an unknown themeId and status", async () => {
+    freshDb();
+    const user = await seedUser();
+    const themeId = await seedTheme();
+    const deckId = await seedDeck(user.id, themeId);
+    useSession(user.id);
+    const route = await import("@/app/api/deck/[id]/route");
+
+    const badTheme = await readJson(
+      await route.PATCH(
+        jsonRequest(`http://t/api/deck/${deckId}`, "PATCH", { themeId: "does-not-exist" }),
+        { params: Promise.resolve({ id: deckId }) },
+      ),
+    );
+    expect(badTheme.status).toBe(400);
+
+    const badStatus = await readJson(
+      await route.PATCH(
+        jsonRequest(`http://t/api/deck/${deckId}`, "PATCH", { status: "bogus" }),
+        { params: Promise.resolve({ id: deckId }) },
+      ),
+    );
+    expect(badStatus.status).toBe(400);
+
+    // A real theme still applies.
+    const themeB = await seedTheme("B");
+    const good = await readJson(
+      await route.PATCH(
+        jsonRequest(`http://t/api/deck/${deckId}`, "PATCH", { themeId: themeB }),
+        { params: Promise.resolve({ id: deckId }) },
+      ),
+    );
+    expect(good.status).toBe(200);
+    expect(good.body.deck.themeId).toBe(themeB);
+  });
+
+  it("PATCH card blocks applies the model schema (rejects junk, keeps valid)", async () => {
+    freshDb();
+    const user = await seedUser();
+    const themeId = await seedTheme();
+    const deckId = await seedDeck(user.id, themeId);
+    useSession(user.id);
+
+    const cardsRoute = await import("@/app/api/deck/[id]/cards/route");
+    const created = await readJson(
+      await cardsRoute.POST(
+        jsonRequest(`http://t/api/deck/${deckId}/cards`, "POST", { title: "C" }),
+        { params: Promise.resolve({ id: deckId }) },
+      ),
+    );
+    const cardId = created.body.card.id as string;
+    const cardRoute = await import("@/app/api/deck/[id]/cards/[cardId]/route");
+    const patch = async (body: unknown) =>
+      readJson(
+        await cardRoute.PATCH(
+          jsonRequest(`http://t/api/deck/${deckId}/cards/${cardId}`, "PATCH", body),
+          { params: Promise.resolve({ id: deckId, cardId }) },
+        ),
+      );
+
+    // An unknown block type is the model's contract to follow → 400 …
+    expect((await patch({ blocks: [{ type: "sparkle" }] })).status).toBe(400);
+    // …as is a non-array.
+    expect((await patch({ blocks: "nope" })).status).toBe(400);
+    // Unknown card statuses are refused too.
+    expect((await patch({ status: "bogus" })).status).toBe(400);
+
+    // Valid blocks still save — normalized through the same schema.
+    const good = await patch({ blocks: [{ type: "paragraph", text: ["ok"] }] });
+    expect(good.status).toBe(200);
+    expect(JSON.parse(good.body.card.blocks)).toEqual([{ type: "paragraph", text: ["ok"] }]);
+  });
 });

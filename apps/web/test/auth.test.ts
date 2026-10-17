@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { hashPassword, verifyPassword, createSessionToken, verifySessionToken } from "../lib/auth";
+import { hashPassword, verifyPassword, verifyAgainstDummy, createSessionToken, verifySessionToken } from "../lib/auth";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -20,6 +20,9 @@ describe("password hashing", () => {
     const a = await hashPassword("same");
     const b = await hashPassword("same");
     expect(a).not.toBe(b);
+  });
+  it("verifyAgainstDummy always fails (login timing equalization)", async () => {
+    expect(await verifyAgainstDummy("anything")).toBe(false);
   });
 });
 

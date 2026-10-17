@@ -160,10 +160,31 @@ export interface SlideDeck {
 function buildSlideBody(deck: SlideDeck, card: SlideInput): string {
   const theme = deck.theme;
   const title = card.title || deck.title;
-  return [
-    `<h1 style="font-family:${theme.fonts.display};font-size:${FONT_SIZE.title};font-weight:bold;color:#${hex(theme.colors.ink)};margin:0 0 16pt 0;">${esc(title)}</h1>`,
-    ...card.blocks.map((b, i) => renderBlockHtml(b, theme, i)),
-  ].join("");
+  // Generated cards open with a heading block that repeats the card title —
+  // prepending our own <h1> would print the title twice on every exported
+  // slide. Only add the synthetic title when the content doesn't state it.
+  const heading = startsWithTitleHeading(card.blocks, title)
+    ? []
+    : [
+        `<h1 style="font-family:${theme.fonts.display};font-size:${FONT_SIZE.title};font-weight:bold;color:#${hex(theme.colors.ink)};margin:0 0 16pt 0;">${esc(title)}</h1>`,
+      ];
+  return [...heading, ...card.blocks.map((b, i) => renderBlockHtml(b, theme, i))].join("");
+}
+
+/** Plain text of an inline run list (strings and formatted parts). */
+function inlineText(inlines: Inline | Inline[]): string {
+  const arr = Array.isArray(inlines) ? inlines : [inlines];
+  return arr.map((part) => (typeof part === "string" ? part : part.text)).join("");
+}
+
+/**
+ * True when the card already opens with a heading whose text *is* the card
+ * title — the common shape for AI-generated cards.
+ */
+function startsWithTitleHeading(blocks: Block[], title: string): boolean {
+  const first = blocks[0];
+  if (!first || first.type !== "heading") return false;
+  return inlineText(first.text).trim() === title.trim();
 }
 
 /**

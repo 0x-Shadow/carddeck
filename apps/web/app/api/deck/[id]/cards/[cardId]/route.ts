@@ -3,8 +3,12 @@ import { getDb } from "@/lib/db";
 import * as t from "@/drizzle/schema";
 import { eq, and } from "drizzle-orm";
 import { resolveOwnedDeck } from "@/lib/deck-access";
+import { validateBlocks } from "@carddeck/ai";
 
 type Params = { params: Promise<{ id: string; cardId: string }> };
+
+/** Card lifecycle states the API will accept (mirrors the pipeline's). */
+const CARD_STATUSES = new Set(["pending", "ready", "error"]);
 
 /**
  * Load a card only if it belongs to a deck the current user owns.
@@ -41,8 +45,25 @@ export async function PATCH(req: Request, { params }: Params) {
 
   const patch: Partial<typeof t.card.$inferInsert> = {};
   if (typeof body?.title === "string" && body.title.trim()) patch.title = body.title.trim();
-  if (body?.blocks !== undefined) patch.blocks = JSON.stringify(body.blocks ?? []);
-  if (typeof body?.status === "string") patch.status = body.status;
+  if (body?.blocks !== undefined) {
+    // Blocks render on the public reader too: apply the same schema the model
+    // output must satisfy (coercing salvageable payloads, rejecting the rest)
+    // so a hand-crafted PATCH can never white-screen viewers.
+    try {
+      patch.blocks = JSON.stringify(validateBlocks(body.blocks));
+    } catch (err) {
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "invalid blocks" },
+        { status: 400 },
+      );
+    }
+  }
+  if (typeof body?.status === "string") {
+    if (!CARD_STATUSES.has(body.status)) {
+      return NextResponse.json({ error: "unknown status" }, { status: 400 });
+    }
+    patch.status = body.status;
+  }
 
   const db = getDb();
   const [card] = await db.update(t.card).set(patch).where(eq(t.card.id, cardId)).returning();

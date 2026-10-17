@@ -17,12 +17,13 @@ Prompt → editable outline → AI-generated themed deck → refine → Present 
 - **PowerPoint export first-class.** `/api/deck/[id]/export/pptx` renders a
   fully editable, OOXML-correct .pptx (16:9, theme colors, real text runs) —
   plus `.potx` theme templates and print-quality **PDF** (headless Chromium).
-- **Editable canvas.** Every card edits in place — headings, paragraphs, lists,
-  quotes, callouts, images, tables, charts — with optimistic saves.
-- **Themes.** Six presets (Light, Dark, Midnight, Paper, Sunset, Terminal);
-  switch any deck instantly without losing your editing session.
-- **Chat refine.** Ask for changes to a single card ("shorten this", "make it
-  punchier") and watch the diff apply.
+- **Editable canvas.** Every card edits in place — headings, paragraphs,
+  lists, quotes, callouts, images, dividers, columns, and charts — with
+  optimistic saves.
+- **Themes.** Eight presets (Light, Dark, Midnight, Sunset, Forest, Mono,
+  Paper, Neon); switch any deck instantly without losing your editing session.
+- **Chat refine.** Ask for a change to a single card ("shorten this", "make it
+  punchier") — the revision is applied to the card in place.
 - **Present & share.** Full-screen present mode (arrow keys, progress bar) and
   public read-only share links.
 - **Accounts.** Email + password (argon2), HMAC-signed session cookies,
@@ -77,7 +78,12 @@ OPENAI_BASE_URL=                # optional: e.g. http://localhost:11434/v1
 ## Exporting
 
 - **PowerPoint (.pptx)** — no extra setup; the pipeline is DOM-free
-  (`packages/pptx`: `pptxgenjs` + `html2pptx`).
+  (`packages/pptx`: `pptxgenjs` + `html2pptx`). v1 exports the **text layer**
+  faithfully — headings, paragraphs, lists, quotes, callouts, dividers, and
+  columns come out fully editable and theme-colored; images render as
+  captioned placeholders and charts as readable data summaries. PDF export
+  prints through a real browser, so it keeps images and charts exactly as
+  they appear on screen.
 - **PDF** — uses headless Chromium via Playwright. One-time browser install:
 
   ```bash
@@ -94,7 +100,8 @@ turborepo
 ├── apps/web        Next.js 15 (App Router) — UI, REST API, SSE stream,
 │                   export routes (pptx/potx/pdf), auth
 ├── apps/worker     tsx process — claims jobs from the SQLite queue and runs
-│                   the outline / cards / chat pipelines against packages/ai
+│                   the outline and cards pipelines against packages/ai
+│                   (chat refine is a synchronous in-request revision)
 ├── packages/core   shared types, theme presets, block model, validation
 ├── packages/ai     AIProvider interface + StubProvider (default) + OpenAIProvider
 ├── packages/pptx   DOM-free deck renderers: slide HTML for .pptx/.potx and

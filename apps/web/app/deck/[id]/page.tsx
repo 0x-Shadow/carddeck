@@ -50,9 +50,13 @@ export default function DeckPage({ params }: { params: Promise<{ id: string }> }
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // Card showing the AI refine panel (at most one).
+  const [refiningCardId, setRefiningCardId] = useState<string | null>(null);
 
   // Debounce timers live in refs so re-renders (every keystroke) don't reset them.
   const titleTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  // Latest queued title per card, so a flush can persist without a render.
+  const pendingTitleEdits = useRef(new Map<string, string>());
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Mirror of activeJobId for closures that outlive their render (timers).
   const activeJobRef = useRef<string | null>(null);
@@ -171,15 +175,36 @@ export default function DeckPage({ params }: { params: Promise<{ id: string }> }
 
   function editCardTitle(cardId: string, title: string) {
     setCards((prev) => prev.map((c) => (c.id === cardId ? { ...c, title } : c)));
+    pendingTitleEdits.current.set(cardId, title);
     const existing = titleTimers.current.get(cardId);
     if (existing) clearTimeout(existing);
     titleTimers.current.set(
       cardId,
       setTimeout(() => {
         titleTimers.current.delete(cardId);
-        void patch(`/api/deck/${id}/cards/${cardId}`, { title });
+        const queued = pendingTitleEdits.current.get(cardId);
+        pendingTitleEdits.current.delete(cardId);
+        if (queued !== undefined) {
+          void patch(`/api/deck/${id}/cards/${cardId}`, { title: queued });
+        }
       }, 500),
     );
+  }
+
+  /**
+   * Persist in-flight debounced title edits right now.
+   *
+   * Generation reads card titles from the database, so a rename still inside
+   * its 500ms debounce would otherwise be ignored by the run the user just
+   * started with that very title on screen.
+   */
+  function flushTitleEdits() {
+    for (const timer of titleTimers.current.values()) clearTimeout(timer);
+    titleTimers.current.clear();
+    for (const [cardId, title] of pendingTitleEdits.current) {
+      void patch(`/api/deck/${id}/cards/${cardId}`, { title });
+    }
+    pendingTitleEdits.current.clear();
   }
 
   function changeTheme(themeId: string) {
@@ -262,7 +287,14 @@ export default function DeckPage({ params }: { params: Promise<{ id: string }> }
       {deck!.status === "error" && !activeJobId ? (
         <div className="deck-alert" role="alert">
           <p>Generation finished with errors — some cards failed.</p>
-          <button type="button" className="btn-primary" onClick={() => void attachGeneration()}>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => {
+              flushTitleEdits();
+              void attachGeneration();
+            }}
+          >
             Retry failed cards
           </button>
         </div>
@@ -289,7 +321,14 @@ export default function DeckPage({ params }: { params: Promise<{ id: string }> }
         <>
           <div className="deck-actionbar">
             <p className="page-note">Outline ready — generate the content for each card.</p>
-            <button type="button" className="btn-primary" onClick={() => void attachGeneration()}>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => {
+                flushTitleEdits();
+                void attachGeneration();
+              }}
+            >
               Generate content
             </button>
           </div>
@@ -317,6 +356,8 @@ export default function DeckPage({ params }: { params: Promise<{ id: string }> }
           onEditCard={editCard}
           onEditTitle={editCardTitle}
           onRetryCard={() => void attachGeneration()}
+          refiningCardId={refiningCardId}
+          onToggleRefine={setRefiningCardId}
         />
       )}
     </main>

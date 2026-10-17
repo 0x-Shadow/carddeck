@@ -5,6 +5,15 @@ import { PRESET_THEMES, type Block } from "@carddeck/core";
 const theme = PRESET_THEMES.find((t) => t.name === "Midnight")!;
 const deck = { title: "Quarterly Plan", theme };
 
+/** Visible text of the slide body (tags stripped, head excluded). */
+function bodyText(html: string): string {
+  return html.slice(html.indexOf("<body")).replace(/<[^>]+>/g, " ");
+}
+
+function countOccurrences(haystack: string, needle: string): number {
+  return haystack.split(needle).length - 1;
+}
+
 const card = {
   id: "c1",
   title: "Quarterly Plan",
@@ -50,6 +59,26 @@ describe("renderSlideHtml", () => {
     expect(html).not.toContain("<script>alert(1)</script>");
     expect(html).toContain("&lt;script&gt;");
     expect(html).toContain("5 &lt; 6 &amp; 7 &gt; 4");
+  });
+
+  it("prints the card title once when the content already opens with it", async () => {
+    // AI-generated cards start with a heading block repeating the title; the
+    // synthetic <h1> must be skipped or every slide shows the title twice.
+    const generated = {
+      id: "c3",
+      title: "Roadmap for Q4",
+      blocks: [
+        { type: "heading", level: 1, text: ["Roadmap for Q4"] } as Block,
+        { type: "paragraph", text: ["Three phases."] } as Block,
+      ],
+    };
+    const html = await renderSlideHtml(deck, generated);
+    expect(countOccurrences(bodyText(html), "Roadmap for Q4")).toBe(1);
+  });
+
+  it("still prepends the title when the content does not open with it", async () => {
+    const html = await renderSlideHtml(deck, card);
+    expect(countOccurrences(bodyText(html), "Quarterly Plan")).toBe(1);
   });
 });
 

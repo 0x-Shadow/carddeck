@@ -1,3 +1,4 @@
+import { notFound } from "next/navigation";
 import { ReaderCard } from "@/components/reader/ReaderCard";
 import { ReaderChrome } from "@/components/reader/ReaderChrome";
 import { deckCssVars } from "@/lib/themes-presets";
@@ -9,7 +10,8 @@ import { getPublicDeck } from "@/lib/public-deck";
  * A server component: `await params` + `getPublicDeck` read the database
  * directly, so the page ships zero client JS and can't flicker through a
  * loading state. There is nothing interactive here — present mode and the
- * editor are separate, owner-gated routes.
+ * editor are separate, owner-gated routes. An unknown or unshared slug is a
+ * plain 404 (`notFound()`), not a 200 page that lies about being a deck.
  */
 export default async function ViewPage({
   params,
@@ -19,13 +21,7 @@ export default async function ViewPage({
   const { slug } = await params;
   const data = await getPublicDeck(slug);
 
-  if (!data) {
-    return (
-      <main className="reader-page reader-notfound" role="alert">
-        <p>This deck is no longer shared (or never was).</p>
-      </main>
-    );
-  }
+  if (!data) notFound();
 
   return (
     <main className="reader-page" style={deckCssVars(data.theme)}>

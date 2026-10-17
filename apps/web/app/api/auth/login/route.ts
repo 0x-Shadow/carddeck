@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { verifyPassword, createSessionToken, SESSION_COOKIE } from "@/lib/auth";
+import { verifyPassword, verifyAgainstDummy, createSessionToken, SESSION_COOKIE } from "@/lib/auth";
 
 /** POST /api/auth/login { email, password } -> 200 { user } + session cookie */
 export async function POST(req: Request) {
@@ -17,7 +17,15 @@ export async function POST(req: Request) {
 
   const db = getDb();
   const user = await db.query.user.findFirst({ where: (u, { eq }) => eq(u.email, email) });
-  if (!user || !(await verifyPassword(user.passwordHash, password))) {
+  // Unknown emails still burn one argon2 verification (verifyAgainstDummy) so
+  // response timing can't be used to enumerate registered addresses.
+  if (!user) {
+    // Unknown emails still burn one argon2 verification (verifyAgainstDummy)
+    // so response timing can't be used to enumerate registered addresses.
+    await verifyAgainstDummy(password);
+    return NextResponse.json({ error: "invalid credentials" }, { status: 401 });
+  }
+  if (!(await verifyPassword(user.passwordHash, password))) {
     return NextResponse.json({ error: "invalid credentials" }, { status: 401 });
   }
 
@@ -29,6 +37,8 @@ export async function POST(req: Request) {
   res.cookies.set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
+    // Never send the session cookie over plain HTTP in production.
+    secure: process.env.NODE_ENV === "production",
     path: "/",
     maxAge: 60 * 60 * 24 * 7,
   });

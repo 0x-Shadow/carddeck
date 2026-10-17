@@ -216,3 +216,19 @@ reader layout faithfully without a second hand-built PowerPoint renderer.
   `isPublic` or ownership.
 - AI provider keys stay server-side (worker + route handlers), never shipped to
   the client bundle.
+
+## Known limitations (v1)
+
+Deliberate scope cuts for this build; each is a contained follow-up:
+
+- **PPTX export is text-first.** The DOM-free pipeline exports the full text
+  layer (headings, paragraphs, lists, quotes, callouts, dividers, columns) as
+  editable, theme-colored shapes. `image` blocks export as captioned
+  placeholders and `chart` blocks as readable data summaries; the
+  browser-printed PDF keeps both exactly as they appear on screen.
+- **No file uploads.** `image` blocks reference URLs only; there is no asset
+  pipeline.
+- **Chat refine is single-instruction.** Every revision persists a
+  `chatMessage` row, but v1's panel shows no transcript.
+- **One SQLite writer.** The queue lives in the shared SQLite file, so run a
+  single worker per `DATA_DIR`; horizontal scale-out would need a real queue.

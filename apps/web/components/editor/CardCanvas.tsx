@@ -3,6 +3,7 @@
 import type { Block, Theme } from "@carddeck/core";
 import { deckCssVars } from "@/lib/theme-styles";
 import { BlockEditor } from "./BlockEditor";
+import { ChatPanel } from "@/components/ai/ChatPanel";
 
 export interface CanvasCard {
   id: string;
@@ -33,6 +34,10 @@ export interface CardCanvasProps {
   onEditTitle?: (cardId: string, title: string) => void;
   /** Re-run generation for a card that failed. */
   onRetryCard?: (cardId: string) => void;
+  /** Card currently showing the AI refine panel (at most one at a time). */
+  refiningCardId?: string | null;
+  /** Toggle the refine panel; omit together with `refiningCardId` to hide it. */
+  onToggleRefine?: (cardId: string | null) => void;
 }
 
 function parseBlocks(raw: string): Block[] {
@@ -52,7 +57,17 @@ function parseBlocks(raw: string): Block[] {
  * offer a per-card retry, and `pending` cards show a generating state so a
  * half-streamed deck never looks finished.
  */
-export function CardCanvas({ deck, cards, theme, pendingLabel, onEditCard, onEditTitle, onRetryCard }: CardCanvasProps) {
+export function CardCanvas({
+  deck,
+  cards,
+  theme,
+  pendingLabel,
+  onEditCard,
+  onEditTitle,
+  onRetryCard,
+  refiningCardId,
+  onToggleRefine,
+}: CardCanvasProps) {
   return (
     <div
       className="deck"
@@ -85,11 +100,34 @@ export function CardCanvas({ deck, cards, theme, pendingLabel, onEditCard, onEdi
 
           <div className="card-body">
             {card.status === "ready" ? (
-              <BlockEditor
-                blocks={parseBlocks(card.blocks)}
-                theme={theme}
-                onChange={(next) => onEditCard?.(card.id, next)}
-              />
+              <>
+                <BlockEditor
+                  blocks={parseBlocks(card.blocks)}
+                  theme={theme}
+                  onChange={(next) => onEditCard?.(card.id, next)}
+                />
+                {onToggleRefine ? (
+                  <div className="card-refine-row">
+                    <button
+                      type="button"
+                      className="btn-secondary card-refine-toggle"
+                      aria-pressed={refiningCardId === card.id}
+                      onClick={() =>
+                        onToggleRefine(refiningCardId === card.id ? null : card.id)
+                      }
+                    >
+                      {refiningCardId === card.id ? "Close refine" : "Refine with AI"}
+                    </button>
+                  </div>
+                ) : null}
+                {refiningCardId === card.id ? (
+                  <ChatPanel
+                    deckId={deck.id}
+                    cardId={card.id}
+                    onApplied={(blocks) => onEditCard?.(card.id, blocks)}
+                  />
+                ) : null}
+              </>
             ) : card.status === "error" ? (
               <div className="card-error" role="alert">
                 <p>This card failed to generate.</p>

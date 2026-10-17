@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import { BlockRenderer } from "../components/blocks";
+import { safeHref } from "../components/blocks/shared";
 import { BlockEditor } from "../components/editor/BlockEditor";
 import { CardCanvas } from "../components/editor/CardCanvas";
 import { PRESET_THEMES, type Block } from "@carddeck/core";
@@ -183,5 +184,127 @@ describe("BlockEditor", () => {
     expect(onChange).toHaveBeenCalledTimes(1);
     const next = onChange.mock.calls[0][0] as Block[];
     expect(next[0]).toEqual({ type: "heading", level: 2, text: [{ text: "Title", bold: true }] });
+  });
+});
+
+describe("renderInline link safety", () => {
+  it("renders http(s)/mailto/relative links but drops scriptable schemes", () => {
+    const { container } = render(
+      <BlockRenderer
+        block={{
+          type: "paragraph",
+          text: [
+            { text: "ok", link: "https://example.com" },
+            { text: "mail", link: "mailto:a@b.c" },
+            { text: "rel", link: "/view/x" },
+            { text: "bad", link: "javascript:alert(1)" },
+            { text: "data", link: "data:text/html,x" },
+          ],
+        }}
+        theme={theme}
+      />,
+    );
+    const hrefs = [...container.querySelectorAll("a")].map((a) => a.getAttribute("href"));
+    expect(hrefs).toEqual(["https://example.com", "mailto:a@b.c", "/view/x"]);
+    // Unsafe parts survive as plain text — never as anchors.
+    expect(container.textContent).toContain("bad");
+    expect(container.textContent).toContain("data");
+  });
+
+  it("safeHref accepts only navigable, non-scripting targets", () => {
+    expect(safeHref("https://x.dev")).toBe("https://x.dev");
+    expect(safeHref(" http://x.dev ")).toBe("http://x.dev");
+    expect(safeHref("mailto:a@b.c")).toBe("mailto:a@b.c");
+    expect(safeHref("/view/slug")).toBe("/view/slug");
+    expect(safeHref("#top")).toBe("#top");
+    expect(safeHref("javascript:alert(1)")).toBeNull();
+    expect(safeHref("JAVASCRIPT:alert(1)")).toBeNull();
+    expect(safeHref("data:text/html,x")).toBeNull();
+    expect(safeHref("vbscript:x")).toBeNull();
+    expect(safeHref("")).toBeNull();
+    expect(safeHref("   ")).toBeNull();
+  });
+});
+
+describe("CardCanvas refine panel", () => {
+  const deck = {
+    id: "d1",
+    title: "Deck",
+    format: "presentation",
+    status: "ready",
+    themeId: "light",
+  };
+  const cards = [
+    {
+      id: "c1",
+      position: 0,
+      title: "One",
+      blocks: JSON.stringify([{ type: "paragraph", text: ["hi"] }]),
+      status: "ready",
+    },
+    { id: "c2", position: 1, title: "Two", blocks: "[]", status: "ready" },
+  ];
+
+  it("hides the affordance entirely when no handler is wired", () => {
+    render(<CardCanvas deck={deck} cards={cards} theme={theme} />);
+    expect(screen.queryByRole("button", { name: "Refine with AI" })).toBeNull();
+  });
+
+  it("shows the panel on the active card and toggles per card", () => {
+    const onToggleRefine = vi.fn();
+    render(
+      <CardCanvas
+        deck={deck}
+        cards={cards}
+        theme={theme}
+        refiningCardId="c1"
+        onToggleRefine={onToggleRefine}
+        onEditCard={vi.fn()}
+      />,
+    );
+    // The active card renders the chat panel…
+    expect(screen.getByLabelText("Ask AI to revise this card")).toBeTruthy();
+    // …its own button closes it…
+    fireEvent.click(screen.getByRole("button", { name: "Close refine" }));
+    expect(onToggleRefine).toHaveBeenCalledWith(null);
+    // …and the other card's button opens it there.
+    fireEvent.click(screen.getByRole("button", { name: "Refine with AI" }));
+    expect(onToggleRefine).toHaveBeenCalledWith("c2");
+  });
+
+  it("hands the revised blocks to onEditCard when the panel applies", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        blocks: [{ type: "paragraph", text: ["revised"] }] as Block[],
+        note: "shorter",
+      }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const onEditCard = vi.fn();
+      render(
+        <CardCanvas
+          deck={deck}
+          cards={cards}
+          theme={theme}
+          refiningCardId="c1"
+          onToggleRefine={vi.fn()}
+          onEditCard={onEditCard}
+        />,
+      );
+      fireEvent.change(screen.getByLabelText("Ask AI to revise this card"), {
+        target: { value: "shorten" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: /apply/i }));
+      await waitFor(() =>
+        expect(onEditCard).toHaveBeenCalledWith("c1", [
+          { type: "paragraph", text: ["revised"] },
+        ]),
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

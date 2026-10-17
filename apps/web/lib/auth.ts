@@ -33,6 +33,21 @@ function sign(payload: string): string {
  * Create a signed session token for a user. Format: base64url(userId).exp.sig.
  * The cookie value is this token; it is stateless (no server session store).
  */
+/**
+ * Always-failing verification used on the "no such user" login path.
+ *
+ * Login must do the same argon2 work whether or not the email exists, or
+ * response timing reveals which addresses are registered. The dummy hash is
+ * computed once and reused (the first miss pays the one-time hash cost).
+ */
+let dummyHashPromise: Promise<string> | null = null;
+
+export async function verifyAgainstDummy(password: string): Promise<false> {
+  dummyHashPromise ??= hashPassword(`timing-equalizer-${Math.random()}`);
+  await verifyPassword(await dummyHashPromise, password).catch(() => false);
+  return false;
+}
+
 export function createSessionToken(userId: string): string {
   const exp = Date.now() + SESSION_TTL_MS;
   const payload = `${userId}.${exp}`;

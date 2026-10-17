@@ -78,15 +78,15 @@ export async function POST(req: Request, { params }: Params) {
     format: owned.deck.format as DeckFormat,
   });
 
-  // Only flip to "generating" when we actually started something new; a
-  // duplicate submit must not clobber a deck that already finished.
-  if (job.status === "pending" || job.status === "running") {
-    const db = getDb();
-    await db
-      .update(t.deck)
-      .set({ status: "generating", updatedAt: Date.now() })
-      .where(eq(t.deck.id, id));
-  }
+  // enqueueJob returns either the new pending job or the in-flight one for
+  // this (deck, stage) — a terminal job never comes back — so the deck is
+  // always generating now. Flip it before the client's first poll can race
+  // the worker's own flip.
+  const db = getDb();
+  await db
+    .update(t.deck)
+    .set({ status: "generating", updatedAt: Date.now() })
+    .where(eq(t.deck.id, id));
 
   return NextResponse.json({ jobId: job.id }, { status: 200 });
 }

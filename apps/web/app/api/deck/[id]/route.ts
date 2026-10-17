@@ -33,6 +33,9 @@ export async function GET(_req: Request, { params }: Params) {
   );
 }
 
+/** Deck lifecycle states the API will accept (mirrors the stage machine). */
+const DECK_STATUSES = new Set(["draft", "outline", "generating", "ready", "error"]);
+
 /** PATCH /api/deck/[id] { title?, themeId?, status? } -> 200 { deck } */
 export async function PATCH(req: Request, { params }: Params) {
   const { id } = await params;
@@ -45,12 +48,27 @@ export async function PATCH(req: Request, { params }: Params) {
     status?: string;
   } | null;
 
+  const db = getDb();
   const patch: Partial<typeof t.deck.$inferInsert> = { updatedAt: Date.now() };
   if (typeof body?.title === "string" && body.title.trim()) patch.title = body.title.trim();
-  if (typeof body?.themeId === "string") patch.themeId = body.themeId;
-  if (typeof body?.status === "string") patch.status = body.status;
+  if (typeof body?.themeId === "string") {
+    // An unknown theme id would silently unstyle the deck and its public
+    // reader (deckCssVars falls back to nothing) — accept only real themes.
+    const themeRow = await db.query.theme.findFirst({
+      where: (th, { eq }) => eq(th.id, body.themeId as string),
+    });
+    if (!themeRow) return NextResponse.json({ error: "unknown themeId" }, { status: 400 });
+    patch.themeId = body.themeId;
+  }
+  if (typeof body?.status === "string") {
+    // Status is normally the worker's to move; a whitelist keeps hand-rolled
+    // PATCHes out of states the stage machine never produces.
+    if (!DECK_STATUSES.has(body.status)) {
+      return NextResponse.json({ error: "unknown status" }, { status: 400 });
+    }
+    patch.status = body.status;
+  }
 
-  const db = getDb();
   const [deck] = await db.update(t.deck).set(patch).where(eq(t.deck.id, id)).returning();
   return NextResponse.json({ deck }, { status: 200 });
 }

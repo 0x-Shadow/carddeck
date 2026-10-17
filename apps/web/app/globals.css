@@ -989,6 +989,19 @@ body {
   color: #c0392b;
 }
 
+/* ---- AI refine (per-card chat) ---- */
+
+.card-refine-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.card-refine-toggle {
+  font-size: 12px;
+  padding: 4px 10px;
+}
+
 /* ---- AI chat panel ---- */
 
 .chat-panel {
@@ -1035,7 +1048,6 @@ body {
 }
 
 .reader-loading,
-.reader-notfound,
 .reader-error {
   max-width: 720px;
   margin: 0 auto;

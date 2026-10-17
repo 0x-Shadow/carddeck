@@ -60,10 +60,26 @@ export default function PresentPage({ params }: { params: Promise<{ id: string }
   const theme =
     data.theme ?? PRESET_THEMES.find((th) => th.id === data.deck.themeId) ?? PRESET_THEMES[0];
 
+  // Present mode shows finished slides only: pending skeletons and failed
+  // cards have nothing to show. A partially generated deck presents what it
+  // has; an entirely ungenerated one gets a way back to the editor.
+  const presentable = data.cards.filter((c) => c.status === "ready");
+  if (presentable.length === 0) {
+    return (
+      <main className="present-loading">
+        <h1>Nothing to present yet</h1>
+        <p className="page-note">This deck has no generated cards so far.</p>
+        <Link className="btn-primary" href={`/deck/${id}`}>
+          Back to the editor
+        </Link>
+      </main>
+    );
+  }
+
   return (
     <PresentStage
       deckTitle={data.deck.title}
-      cards={data.cards}
+      cards={presentable}
       theme={theme}
       onExit={() => router.push(`/deck/${id}`)}
     />
