@@ -198,10 +198,17 @@ export async function runCardsJob(job: Job, deps: PipelineDeps = {}): Promise<vo
     const total = targets.length;
 
     if (total === 0) {
-      // Everything is already generated — nothing to do but close out the job.
+      // No card is pending. With cards present that means "everything is
+      // already generated": fill the motion plan and close out. With zero
+      // cards the outline stage never produced a skeleton (e.g. it failed, or
+      // a stale cards job outlived it), so there is nothing to close out —
+      // leave the deck's status alone (ready must never be derived from an
+      // empty deck, and an errored outline must stay errored).
       await setProgress(job.id, 0, 0);
-      await fillMotionPlan(db, job.deckId, provider);
-      await setDeckStatus(db, job.deckId, "ready");
+      if (allCards.length > 0) {
+        await fillMotionPlan(db, job.deckId, provider);
+        await setDeckStatus(db, job.deckId, "ready");
+      }
       await updateJob(job.id, { status: "done", error: null });
       return;
     }

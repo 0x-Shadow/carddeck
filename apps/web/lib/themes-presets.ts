@@ -1,6 +1,6 @@
 import { PRESET_THEMES, type Theme } from "@carddeck/core";
 import { getDb } from "./db";
-import * as t from "@/drizzle/schema";
+import * as t from "../drizzle/schema";
 export { deckCssVars, type DeckCssVars } from "./theme-styles";
 
 /**

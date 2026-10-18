@@ -1,8 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { getDb, resolveDataDir } from "@/lib/db";
-import * as t from "@/drizzle/schema";
+// Relative imports, not the `@/` alias: the worker and MCP server reach this
+// module from other workspaces (see their relative-import convention).
+import { getDb, resolveDataDir } from "./db";
+import * as t from "../drizzle/schema";
 
 /**
  * Image asset storage.

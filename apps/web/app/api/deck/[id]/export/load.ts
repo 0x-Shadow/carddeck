@@ -5,6 +5,10 @@ import { eq } from "drizzle-orm";
 import { resolveOwnedDeck } from "@/lib/deck-access";
 import { loadSlideInputs, type ExportDeckData } from "@/lib/export-slides";
 
+// The download-name policy lives in lib/export-slides.ts (shared with the MCP
+// server); re-exported here so the export routes keep one import site.
+export { exportFilename } from "@/lib/export-slides";
+
 export type ExportableDeck = ExportDeckData;
 
 /**
@@ -39,10 +43,4 @@ export async function loadExportableDeck(
     return { res: NextResponse.json({ error: "not found" }, { status: 404 }) };
   }
   return { data };
-}
-
-/** Filesystem/content-type-safe download name. */
-export function exportFilename(title: string, ext: string): string {
-  const clean = title.replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "-");
-  return `${clean || "deck"}.${ext}`;
 }

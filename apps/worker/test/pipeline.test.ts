@@ -425,6 +425,20 @@ describe("worker pipeline", () => {
     expect(parseMotionPlan((await deckOf(db, deckId))?.motion)).toEqual(designed);
   });
 
+  it("does not flip a deck with no cards ready (stale cards job after a failed outline)", async () => {
+    const deckId = await seedDeck(db);
+    await db.update(t.deck).set({ status: "error" }).where(eq(t.deck.id, deckId));
+
+    const job = await enqueueJob(deckId, "cards", { format: "presentation" });
+    await runCardsJob(job, { provider: new StubProvider() });
+
+    // Nothing to generate and no skeleton to close out: the deck's status is
+    // the outline stage's to own, the job itself still settles.
+    expect((await deckOf(db, deckId))?.status).toBe("error");
+    expect((await jobOf(db, job.id))?.status).toBe("done");
+    expect(await cardsOf(db, deckId)).toHaveLength(0);
+  });
+
   it("runOnce claims a pending job, runs it, and reports an empty queue", async () => {
     const deckId = await seedDeck(db);
     await enqueueJob(deckId, "outline", {

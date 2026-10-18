@@ -1,8 +1,10 @@
-import { getDb } from "@/lib/db";
-import * as t from "@/drizzle/schema";
+// Relative imports, not the `@/` alias: the worker and MCP server reach this
+// module from other workspaces (see their relative-import convention).
+import { getDb } from "./db";
+import * as t from "../drizzle/schema";
 import { asc, eq } from "drizzle-orm";
-import { rowToTheme } from "@/lib/themes-presets";
-import { readAssetDataUrl, MAX_ASSET_BYTES } from "@/lib/assets";
+import { rowToTheme } from "./themes-presets";
+import { readAssetDataUrl, MAX_ASSET_BYTES } from "./assets";
 import { PRESET_THEMES, parseMotionPlan, type Block, type MotionPlan, type Theme } from "@carddeck/core";
 import type { SlideInput, ImageResolver, ResolvedImage } from "@carddeck/pptx";
 
@@ -115,4 +117,25 @@ export function createImageResolver(deckId: string): ImageResolver {
     if (/^https?:\/\//i.test(src)) return fetchRemoteImage(src);
     return null;
   };
+}
+
+/**
+ * The motion plan a renderer (HTTP route or MCP tool) should inject: the plan
+ * sliced to the slides actually being exported (unready cards drop out), or
+ * `undefined` when the deck has no plan or the operator disabled injection
+ * via `CARDDECK_MOTION=off`. One home for this policy so both front doors
+ * honor the same kill switch.
+ */
+export function motionForExport(
+  motion: MotionPlan | null,
+  slideCount: number,
+): MotionPlan | undefined {
+  if (process.env.CARDDECK_MOTION === "off" || !motion) return undefined;
+  return { ...motion, slides: motion.slides.slice(0, slideCount) };
+}
+
+/** Filesystem/content-type-safe download or export name. */
+export function exportFilename(title: string, ext: string): string {
+  const clean = title.replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "-");
+  return `${clean || "deck"}.${ext}`;
 }
