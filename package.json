@@ -1,0 +1,30 @@
+{
+  "name": "carddeck",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "e2e"
+  ],
+  "scripts": {
+    "test": "turbo run test",
+    "e2e": "turbo run e2e",
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "start": "turbo run start"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "packageManager": "npm@10.0.0",
+  "allowScripts": {
+    "esbuild@0.21.5": true,
+    "esbuild@0.19.12": true,
+    "esbuild@0.18.20": true,
+    "better-sqlite3@11.10.0": true,
+    "esbuild@0.28.2": true
+  }
+}

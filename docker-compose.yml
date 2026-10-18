@@ -1,0 +1,30 @@
+# Carddeck self-hosting: one service runs the web app and the worker.
+#
+#   echo "CARDDECK_SESSION_SECRET=$(openssl rand -hex 32)" > .env
+#   docker compose up -d --build
+#
+# Then open http://localhost:3000. Optional OpenAI settings can live in the
+# same .env (OPENAI_API_KEY / OPENAI_MODEL / OPENAI_BASE_URL) and are passed
+# through below; without them the key-free stub provider generates decks.
+services:
+  carddeck:
+    build: .
+    image: carddeck:local
+    ports:
+      - "3000:3000"
+    environment:
+      # Required — the app refuses to boot in production without it. Kept as a
+      # separate name so a forks-own .env can't accidentally ship a dev secret.
+      SESSION_SECRET: "${CARDDECK_SESSION_SECRET:?set CARDDECK_SESSION_SECRET (>=32 chars) in .env or the environment}"
+      DATA_DIR: /data
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      OPENAI_MODEL: "${OPENAI_MODEL:-gpt-4o-mini}"
+      OPENAI_BASE_URL: "${OPENAI_BASE_URL:-}"
+      # Set to `off` to strip PowerPoint animation injection.
+      CARDDECK_MOTION: "${CARDDECK_MOTION:-}"
+    volumes:
+      - carddeck-data:/data
+    restart: unless-stopped
+
+volumes:
+  carddeck-data:

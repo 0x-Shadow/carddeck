@@ -1,0 +1,16 @@
+# Build context hygiene — keep the developer's machine out of the image.
+node_modules
+**/node_modules
+.git
+.gitignore
+.turbo
+**/.next
+.next
+data
+e2e/.data
+test-results
+playwright-report
+coverage
+.superpowers
+*.log
+.DS_Store

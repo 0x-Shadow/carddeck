@@ -1,0 +1,1 @@
+ALTER TABLE `deck` ADD `motion` text;

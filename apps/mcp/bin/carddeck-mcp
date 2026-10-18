@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+# Carddeck MCP server over stdio.
+#
+# Client configs exec this path directly, so it pins the working directory to
+# the repo root before handing over to tsx: `npx tsx` then resolves the local
+# toolchain no matter where the agent was started, and the server's data
+# directory resolves to this repo's ./data (or $DATA_DIR, if set).
+set -eu
+ROOT="$(CDPATH='' cd -- "$(dirname -- "$0")/../../.." && pwd)"
+cd "$ROOT"
+exec npx tsx apps/mcp/src/index.ts
