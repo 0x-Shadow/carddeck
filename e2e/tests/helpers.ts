@@ -101,3 +101,31 @@ export async function createReadyDeck(
   const deckId = await generateAndFinish(page, opts.numCards ?? 4);
   return { deckId, titles: outline.titles };
 }
+
+/** Read the first `length` bytes of a downloaded file, as latin1 text. */
+export async function firstBytes(filePath: string, length: number): Promise<string> {
+  const { open } = await import("node:fs/promises");
+  const handle = await open(filePath, "r");
+  try {
+    const buffer = Buffer.alloc(length);
+    await handle.read(buffer, 0, length, 0);
+    return buffer.toString("latin1");
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
+ * Export the open deck as PowerPoint through the toolbar and require a real
+ * OOXML package (zip magic "PK") on disk.
+ */
+export async function exportPptx(page: Page): Promise<void> {
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: /^export$/i }).click();
+  await page.getByRole("menuitem", { name: /powerpoint/i }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/\.pptx$/);
+  const path = await download.path();
+  expect(path).toBeTruthy();
+  expect(await firstBytes(path!, 2)).toBe("PK");
+}
