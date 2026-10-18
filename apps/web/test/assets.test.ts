@@ -140,6 +140,89 @@ describe("asset storage", () => {
     expect(huge.status).toBe(413);
   });
 
+  it("refuses an oversized upload from its declared Content-Length alone", async () => {
+    freshDb();
+    const user = await seedUser();
+    const themeId = await seedTheme();
+    const deckId = await seedDeck(user.id, themeId);
+    useSession(user.id);
+    const { POST } = await import("@/app/api/deck/[id]/assets/route");
+
+    // The header claims 64MB even though the body is an endless trickle: the
+    // route must reject on the declaration before consuming the stream.
+    const req = new Request(`http://t/a`, {
+      method: "POST",
+      headers: {
+        "content-type": "multipart/form-data; boundary=xyz",
+        "content-length": String(64 * 1024 * 1024),
+      },
+      body: new ReadableStream<Uint8Array>({
+        pull(controller) {
+          controller.enqueue(new Uint8Array(1024));
+        },
+      }),
+      duplex: "half",
+    } as RequestInit & { duplex: "half" });
+    const res = await POST(req, { params: Promise.resolve({ id: deckId }) });
+    expect(res.status).toBe(413);
+  });
+
+  it("cuts off a chunked oversized body that declares no length", async () => {
+    freshDb();
+    const user = await seedUser();
+    const themeId = await seedTheme();
+    const deckId = await seedDeck(user.id, themeId);
+    useSession(user.id);
+    const { POST } = await import("@/app/api/deck/[id]/assets/route");
+
+    // No Content-Length at all — a hostile client can always stream more than
+    // it admits to. The route caps the body as it reads it.
+    const chunk = new Uint8Array(1024 * 1024);
+    const req = new Request(`http://t/a`, {
+      method: "POST",
+      headers: { "content-type": "multipart/form-data; boundary=xyz" },
+      body: new ReadableStream<Uint8Array>({
+        pull(controller) {
+          controller.enqueue(chunk);
+        },
+      }),
+      duplex: "half",
+    } as RequestInit & { duplex: "half" });
+    const res = await POST(req, { params: Promise.resolve({ id: deckId }) });
+    expect(res.status).toBe(413);
+  });
+
+  it("trusts sniffed bytes over the declared type and serves with nosniff", async () => {
+    freshDb();
+    const user = await seedUser();
+    const themeId = await seedTheme();
+    const deckId = await seedDeck(user.id, themeId);
+    useSession(user.id);
+    const { POST } = await import("@/app/api/deck/[id]/assets/route");
+    const p = { params: Promise.resolve({ id: deckId }) };
+
+    // A GIF pretending to be a PNG: the bytes win.
+    const gif = Buffer.from("GIF89a" + "\0".repeat(16));
+    const res = await POST(uploadRequest(`http://t/a`, "x.png", "image/png", gif), p);
+    expect(res.status).toBe(201);
+    const { asset } = (await res.json()) as { asset: { id: string; url: string } };
+
+    const { GET } = await import("@/app/api/deck/[id]/assets/[assetId]/route");
+    const got = await GET(new Request(`http://t${asset.url}`), {
+      params: Promise.resolve({ id: deckId, assetId: asset.id }),
+    });
+    expect(got.status).toBe(200);
+    expect(got.headers.get("content-type")).toBe("image/gif");
+    expect(got.headers.get("x-content-type-options")).toBe("nosniff");
+
+    // Declared PNG, bytes that are not an image at all: rejected.
+    const junk = await POST(
+      uploadRequest(`http://t/a`, "x.png", "image/png", Buffer.from("not an image")),
+      p,
+    );
+    expect(junk.status).toBe(400);
+  });
+
   it("returns 404 for traversal-shaped and unknown asset ids without leaking files", async () => {
     freshDb();
     const user = await seedUser();

@@ -268,6 +268,31 @@ describe("carddeck MCP server", () => {
     expect(deck.cards[2].status).toBe("pending"); // content omitted: outline-only
   });
 
+  it("re-derives the motion plan when cards are appended to a ready deck", async () => {
+    const client = await connect();
+    const created = await call(client, "create_deck_from_cards", {
+      title: "Grow animated",
+      cards: [{ title: "One", content: ["a"] }],
+      motion: "subtle",
+    });
+    const deckId = created.body.deckId as string;
+
+    const before = await call(client, "get_deck", { deckId });
+    expect((before.body.deck as any).motion.slides).toHaveLength(1);
+
+    const added = await call(client, "add_cards", {
+      deckId,
+      cards: [{ title: "Two", content: ["b"] }, { title: "Three", content: ["c"] }],
+    });
+    expect(added.isError).toBe(false);
+
+    // The appended cards animate too: the stored plan never lags the cards.
+    const after = await call(client, "get_deck", { deckId });
+    const motion = (after.body.deck as any).motion;
+    expect(motion.preset).toBe("subtle");
+    expect(motion.slides).toHaveLength(3);
+  });
+
   it("exports a deck to a .pptx file on disk", async () => {
     const client = await connect();
     const created = await call(client, "create_deck_from_cards", {

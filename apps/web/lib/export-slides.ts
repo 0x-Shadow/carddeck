@@ -2,7 +2,6 @@
 // module from other workspaces (see their relative-import convention).
 import { getDb } from "./db";
 import * as t from "../drizzle/schema";
-import { asc, eq } from "drizzle-orm";
 import { rowToTheme } from "./themes-presets";
 import { readAssetDataUrl, MAX_ASSET_BYTES } from "./assets";
 import { PRESET_THEMES, parseMotionPlan, type Block, type MotionPlan, type Theme } from "@carddeck/core";

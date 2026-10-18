@@ -85,16 +85,17 @@ function imageRect(layout: ImageLayout): {
 } {
   const box = (() => {
     switch (layout) {
-      // Full-bleed background, leaving the title band clear.
+      // Full-bleed background. Drawn before the text and washed to 60%
+      // transparency (see `embedImage`) so the slide stays readable.
       case "behind":
-        return { x: 0, y: 1.1, w: SLIDE_W, h: SLIDE_H - 1.1 };
+        return { x: 0, y: 0, w: SLIDE_W, h: SLIDE_H };
       // Floated to the right of the text column.
       case "side":
-        return { x: SLIDE_W - 4.5, y: 1.2, w: 4, h: 3 };
-      // Stacked under the text, full column width.
+        return { x: 8.4, y: 1.7, w: 4.4, h: 4.2 };
+      // Under the title band, full column width.
       case "full":
       default:
-        return { x: MARGIN, y: 4.6, w: SLIDE_W - MARGIN * 2, h: 2.4 };
+        return { x: MARGIN, y: 1.7, w: 12.33, h: 4.2 };
     }
   })();
   return { ...box, sizing: { type: "contain", w: box.w, h: box.h } };
@@ -119,6 +120,9 @@ async function embedImage(
     slide.addImage({
       data: resolved.dataUrl,
       ...rect,
+      // `behind` is a background wash: 60% transparency (written as
+      // <a:alphaModFix amt="40000"/>) keeps the text in front legible.
+      ...(image.layout === "behind" ? { transparency: 60 } : {}),
     } as never);
   } catch {
     return false;
@@ -194,6 +198,19 @@ export async function buildPptxBuffer(
     const items = convert(html);
     const slide = pres.addSlide();
 
+    // Pictures first: PowerPoint stacks shapes in creation order, and a
+    // `behind` image must read as a background under the text. Embeds are
+    // `<p:pic>` shapes, which the motion injector never targets, so their
+    // z-order is free. Failures collect here and degrade to placeholder text
+    // boxes *after* the real text below — placeholders are `<p:sp>` shapes
+    // too, and the injector targets the first `<p:sp>`s in document order, so
+    // a build must never find a placeholder before real content.
+    const placeholders: SlideImage[] = [];
+    for (const image of images[index] ?? []) {
+      const embedded = await embedImage(slide, image, resolveImage);
+      if (!embedded) placeholders.push(image);
+    }
+
     // How many shapes this slide wants: at most one per planned build (the
     // plan's build count already matches 1 title + N blocks), never more than
     // the slide has text items to distribute, and never more than
@@ -220,9 +237,7 @@ export async function buildPptxBuffer(
       });
     }
 
-    for (const image of images[index] ?? []) {
-      const embedded = await embedImage(slide, image, resolveImage);
-      if (embedded) continue;
+    for (const image of placeholders) {
       // Degradation: a captioned placeholder box, same geometry as the image
       // would have had, so the slide keeps its shape and the reader knows an
       // image was intended here.

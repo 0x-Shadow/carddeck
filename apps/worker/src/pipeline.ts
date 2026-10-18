@@ -1,5 +1,5 @@
 import type { AIProvider } from "@carddeck/ai";
-import { createProvider } from "@carddeck/ai";
+import { createProvider, validateMotionPlan } from "@carddeck/ai";
 import {
   parseMotionPlan,
   planMotionForDeck,
@@ -102,10 +102,18 @@ async function fillMotionPlan(db: DB, deckId: string, provider: AIProvider): Pro
     designed = undefined;
   }
 
-  const slides =
-    designed && designed.slides.length > 0
-      ? designed.slides
-      : planMotionForDeck(motion.preset, cards, deckId).slides;
+  // A provider-designed plan is model output like any other: it goes through
+  // the same strict validation as every other AI response (preset, effect
+  // names, bounds, delay clamps) before it can reach the DB. An invalid
+  // design falls back to the deterministic expansion, silently.
+  let slides = planMotionForDeck(motion.preset, cards, deckId).slides;
+  if (designed && designed.slides.length > 0) {
+    try {
+      slides = validateMotionPlan(designed, cards.length).slides;
+    } catch {
+      // `slides` already holds the deterministic plan.
+    }
+  }
 
   // Store the deck's own preset: the picker's selection must survive a model
   // that drifted to a different preset in its design.

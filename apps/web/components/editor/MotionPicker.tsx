@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState, type KeyboardEvent } from "react";
 import type { MotionPreset } from "@carddeck/core";
 
 const PRESETS: Array<{ value: MotionPreset; label: string }> = [
@@ -21,13 +21,22 @@ interface MotionPickerProps {
  * pattern: flip the preset immediately, PATCH the deck, roll back if the
  * server rejects it. The server derives the full per-slide plan (or the
  * worker fills it after generation) — the client never builds plans itself.
+ *
+ * Re-picking the checked preset is deliberate, not a no-op: it re-sends the
+ * PATCH so the server re-derives the plan from the deck's current cards
+ * (cards appended since the last pick leave the stored plan stale otherwise).
+ *
+ * Keyboard behavior follows the ARIA radiogroup pattern: arrows move
+ * selection with focus, Home/End jump to the ends, and only the checked
+ * radio sits in the tab order.
  */
 export function MotionPicker({ deckId, preset, onChange }: MotionPickerProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const refs = useRef<Array<HTMLButtonElement | null>>([]);
 
   async function pick(next: MotionPreset) {
-    if (next === preset || saving) return;
+    if (saving) return;
     setSaving(true);
     setError(null);
     const previous = preset;
@@ -47,17 +56,35 @@ export function MotionPicker({ deckId, preset, onChange }: MotionPickerProps) {
     }
   }
 
+  function onKeyDown(e: KeyboardEvent<HTMLButtonElement>, index: number) {
+    const last = PRESETS.length - 1;
+    let next: number | null = null;
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") next = index === last ? 0 : index + 1;
+    else if (e.key === "ArrowLeft" || e.key === "ArrowUp") next = index === 0 ? last : index - 1;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = last;
+    if (next === null) return;
+    e.preventDefault();
+    refs.current[next]?.focus();
+    void pick(PRESETS[next].value);
+  }
+
   return (
     <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Deck motion">
-      {PRESETS.map((p) => (
+      {PRESETS.map((p, i) => (
         <button
           key={p.value}
+          ref={(el) => {
+            refs.current[i] = el;
+          }}
           type="button"
           role="radio"
           aria-checked={preset === p.value}
           aria-label={`Motion: ${p.label}`}
           disabled={saving}
+          tabIndex={preset === p.value ? 0 : -1}
           onClick={() => pick(p.value)}
+          onKeyDown={(e) => onKeyDown(e, i)}
           className={preset === p.value ? "btn-secondary motion-option-active" : "btn-secondary"}
         >
           {p.label}

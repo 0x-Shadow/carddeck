@@ -110,7 +110,7 @@ OPENAI_BASE_URL=                # optional: e.g. http://localhost:11434/v1
 | `DATA_DIR` | `./data` (anchored to the repo root) | SQLite database + generated artifacts. |
 | `WORKER_POLL_MS` | `500` | Worker's job-queue polling interval. |
 | `CARDDECK_MCP_USER` | `mcp@carddeck.local` | Owner account for decks created over MCP (auto-provisioned). |
-| `CARDDECK_MOTION` | _(unset)_ | `off` strips animation injection from .pptx/.potx exports. |
+| `CARDDECK_MOTION` | _(unset)_ | `off` strips animation injection from `.pptx` exports. |
 | `CARDDECK_E2E_HOOKS` | _(unset)_ | `1` arms the stub's deterministic `[fail]` failure hook — set only by the E2E runner. |
 
 ## Scripts
@@ -190,10 +190,10 @@ session, no port.
 ## Testing
 
 ```bash
-npm test         # 277 unit/integration tests (core, ai, pptx, worker, mcp, web)
-npm run e2e      # 8 Playwright specs against a production build:
+npm test         # 286 unit/integration tests (core, ai, pptx, worker, mcp, web)
+npm run e2e      # 10 Playwright specs against a production build:
                  #   generate · theme · present · reader · retry · export
-                 #   (pptx+pdf) · auth/landing/dashboard
+                 #   (pptx+pdf) · images · motion · auth/landing/dashboard
 ```
 
 ## Further reading

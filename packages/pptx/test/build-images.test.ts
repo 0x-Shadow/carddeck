@@ -98,10 +98,25 @@ describe("buildPptxBuffer image embedding", () => {
       ],
     });
     const xml = await slideXml(buf, 1);
-    // 914400 EMU per inch. The three picture shapes are positioned at distinct
-    // x-offsets (full=left 0.5in, side=right 8.33in, behind=full-bleed 0in).
-    expect(xml).toContain('<a:off x="457200" y="4206240"/>'); // full: x=0.5in y=4.6in
-    expect(xml).toContain('<a:off x="8076895" y="1097280"/>'); // side: x=8.33in y=1.2in
-    expect(xml).toContain('<a:off x="0" y="1005840"/>'); // behind: x=0 y=1.1in
+    // 914400 EMU per inch; placement follows the plan's contract:
+    // full x0.5 y1.7, side x8.4 y1.7, behind full-bleed x0 y0.
+    expect(xml).toContain('<a:off x="457200" y="1554480"/>'); // full: x=0.5in y=1.7in
+    expect(xml).toContain('<a:off x="7680960" y="1554480"/>'); // side: x=8.4in y=1.7in
+    expect(xml).toContain('<a:off x="0" y="0"/>'); // behind: x=0 y=0
+  });
+
+  it("draws the behind image under the text as a 60% wash", async () => {
+    const buf = await buildPptxBuffer([{ html: "<h1>Cover</h1>" }], {
+      converter: () => [{ text: "Title" }, { text: "Body" }],
+      resolveImage: async () => ({ dataUrl: TINY_PNG_DATA_URL }),
+      images: [[{ src: "behind.png", layout: "behind" }]],
+    });
+    const xml = await slideXml(buf, 1);
+    // PowerPoint stacks shapes in creation order: the picture must precede
+    // the text boxes so the words render on top of the wash…
+    expect(xml.indexOf("<p:pic>")).toBeGreaterThan(-1);
+    expect(xml.indexOf("<p:pic>")).toBeLessThan(xml.indexOf("<p:sp>"));
+    // …and carry the plan's transparency (alphaModFix amt=(100-60)*1000).
+    expect(xml).toContain('<a:alphaModFix amt="40000"/>');
   });
 });

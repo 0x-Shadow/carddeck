@@ -56,7 +56,7 @@ cp .env.example .env
 | `DATA_DIR` | Where SQLite and artifacts live. Relative paths anchor to the repo root. |
 | `WORKER_POLL_MS` | Queue polling interval (default 500). |
 | `CARDDECK_MCP_USER` | Owner account for decks created over MCP (default `mcp@carddeck.local`; auto-provisioned). |
-| `CARDDECK_MOTION` | `off` strips animation injection from .pptx/.potx exports. |
+| `CARDDECK_MOTION` | `off` strips animation injection from `.pptx` exports. |
 | `CARDDECK_E2E_HOOKS` | Internal: `1` arms the stub's `[fail]` test hook. Do not set in normal use. |
 
 `.env` is loaded by Next.js for the web app; when running the worker by hand,
@@ -115,8 +115,8 @@ hint — PPTX/POTX export and the rest of the app are unaffected.
 ## Testing
 
 ```bash
-npm test          # Vitest across core · ai · pptx · worker · mcp · web (277 tests)
-npm run e2e       # Playwright, 8 specs, production build on :3000
+npm test          # Vitest across core · ai · pptx · worker · mcp · web (286 tests)
+npm run e2e       # Playwright, 10 specs, production build on :3000
 ```
 
 The E2E runner (`e2e/serve.mjs`) is self-contained:

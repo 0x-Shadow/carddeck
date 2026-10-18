@@ -27,6 +27,7 @@ import {
   isAcceptedImageMime,
   MAX_ASSET_BYTES,
   saveAsset,
+  sniffImageMime,
 } from "../../web/lib/assets";
 import {
   createImageResolver,
@@ -175,26 +176,6 @@ async function resolveThemeId(nameOrId?: string): Promise<string> {
   });
   if (!preset) throw new Error("no preset themes available");
   return preset.id;
-}
-
-/** Sniff an image's real type from its magic bytes (raster formats only). */
-function sniffImageMime(bytes: Uint8Array): string | null {
-  const b = bytes;
-  if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) {
-    return "image/png";
-  }
-  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
-  if (b.length >= 6 && b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38) {
-    return "image/gif";
-  }
-  if (
-    b.length >= 12 &&
-    b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && // "RIFF"
-    b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50 // "WEBP"
-  ) {
-    return "image/webp";
-  }
-  return null;
 }
 
 /** Fall back to the file extension when magic bytes say nothing. */
@@ -460,7 +441,24 @@ export async function createServer(opts: ServerOptions = {}): Promise<McpServer>
         )
         .returning({ id: t.card.id, title: t.card.title, status: t.card.status });
 
-      await db.update(t.deck).set({ updatedAt: Date.now() }).where(eq(t.deck.id, deck.id));
+      // Card growth invalidates a derived plan: a ready deck's slides are
+      // re-derived so the newly appended blocks animate too (set_motion and
+      // the create paths already do this; the plan must never lag the cards).
+      const plan = parseMotionPlan(deck.motion);
+      if (plan && plan.preset !== "none" && deck.status === "ready") {
+        const all = await cardsOf(deck.id);
+        const slides = planMotionForDeck(
+          plan.preset,
+          all.map((c) => ({ blocks: c.blocks })),
+          deck.id,
+        ).slides;
+        await db
+          .update(t.deck)
+          .set({ motion: JSON.stringify({ preset: plan.preset, slides }), updatedAt: Date.now() })
+          .where(eq(t.deck.id, deck.id));
+      } else {
+        await db.update(t.deck).set({ updatedAt: Date.now() }).where(eq(t.deck.id, deck.id));
+      }
 
       const pending = inserted.filter((c) => c.status === "pending").length;
       return envOk({
@@ -635,6 +633,12 @@ export async function createServer(opts: ServerOptions = {}): Promise<McpServer>
           throw new Error(`could not download image: ${url}`);
         });
         if (!res.ok) throw new Error(`could not download image (HTTP ${res.status})`);
+        // Cheap guard before buffering: a declared oversized body is refused
+        // without ever downloading it.
+        const declared = Number(res.headers.get("content-length") ?? "0");
+        if (Number.isFinite(declared) && declared > MAX_ASSET_BYTES) {
+          throw new Error("image too large (max 10MB)");
+        }
         const header = (res.headers.get("content-type") ?? "").split(";")[0].trim();
         if (!isAcceptedImageMime(header)) {
           throw new Error(`unsupported image type: ${header || "unknown"}`);
@@ -719,9 +723,12 @@ export async function createServer(opts: ServerOptions = {}): Promise<McpServer>
           motion: motionForExport(data.motion, slides.length),
         });
       } else if (args.format === "pdf") {
-        const { chromium } = await import("playwright");
-        let browser: Awaited<ReturnType<typeof chromium.launch>>;
+        // The import itself can fail (playwright not installed at all), and
+        // that is exactly the case the hint is for — keep both inside the
+        // try so every Chromium-less machine gets the same instruction.
+        let browser: import("playwright").Browser;
         try {
+          const { chromium } = await import("playwright");
           browser = await chromium.launch();
         } catch (err) {
           throw new Error(

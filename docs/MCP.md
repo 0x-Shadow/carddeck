@@ -216,7 +216,7 @@ The agent does the multi-step work itself (`create_deck` → `add_image` →
 | --- | --- | --- |
 | `DATA_DIR` | `<repo>/data` | SQLite DB, uploaded images, default export directory. Point it at the same directory the web app uses. |
 | `CARDDECK_MCP_USER` | `mcp@carddeck.local` | Owner account for decks created over MCP (auto-provisioned on boot). |
-| `CARDDECK_MOTION` | *(unset)* | `off` strips animation injection from `.pptx`/`.potx` exports. |
+| `CARDDECK_MOTION` | *(unset)* | `off` strips animation injection from `.pptx` exports. |
 | `OPENAI_API_KEY` | *(unset)* | With a key, `create_deck` uses the real model; without it the deterministic stub generates. Also `OPENAI_MODEL`, `OPENAI_BASE_URL`. |
 | `WORKER_POLL_MS` | `500` | Worker queue poll interval (affects how fast generation is claimed). |
 
@@ -255,7 +255,7 @@ MCP server with `DATA_DIR=./data`.
 | Symptom | Cause / fix |
 | --- | --- |
 | `create_deck` returns `status: "generating"` + note | The worker isn't running. `npm run dev` (or `docker compose up -d`), then `get_deck` again. |
-| `deck not found` | Deck ids come from `create_deck*`/`list_decks`; they're scoped to the agent account. |
+| `deck not found` | Deck ids must exist in the Carddeck instance this server points at (`DATA_DIR`); ids come from `create_deck*`/`list_decks` or from the web app. |
 | `unknown theme: …` | Use a preset name (Light, Dark, Midnight, Sunset, Forest, Mono, Paper, Neon) or a theme id from `get_deck`. |
 | PDF export fails with "Run 'npx playwright install chromium'" | One-time Chromium install (not needed in Docker). |
 | `unsupported image type` / `image too large` | png, jpeg, webp, or gif, max 10 MB; URLs must be reachable within 5 s. |

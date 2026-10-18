@@ -49,6 +49,9 @@ export async function GET(_req: Request, { params }: Params) {
       "content-type": row.mime,
       "content-length": String(bytes.byteLength),
       "cache-control": "public, max-age=31536000, immutable",
+      // The stored type was sniffed from the bytes; never let a browser
+      // second-guess it into rendering something executable.
+      "x-content-type-options": "nosniff",
     },
   });
 }
