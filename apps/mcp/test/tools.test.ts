@@ -104,10 +104,15 @@ describe("carddeck MCP server", () => {
     expect(created.body.status).toBe("ready");
     const createdCards = created.body.cards as { id: string; title: string }[];
     expect(createdCards.map((c) => c.title)).toEqual(["Overview", "Roadmap"]);
+    // Decks born over MCP are shared read-only: the returned url must open in
+    // a browser for the human who never holds the agent account's session.
+    expect(created.body.url).toMatch(/^\/view\/[0-9a-f]{16}$/);
 
     const got = await call(client, "get_deck", { deckId: created.body.deckId });
     const deck = got.body.deck as any;
     expect(deck.title).toBe("Launch Plan");
+    expect(deck.isPublic).toBe(true);
+    expect(deck.url).toBe(created.body.url);
     expect(deck.status).toBe("ready");
     expect(deck.cards).toHaveLength(2);
     // One paragraph block per content line.
@@ -138,6 +143,7 @@ describe("carddeck MCP server", () => {
     expect(result.isError).toBe(false);
     expect(result.body.status).toBe("ready");
     expect((result.body.cards as unknown[]).length).toBe(3);
+    expect(result.body.url).toMatch(/^\/view\/[0-9a-f]{16}$/);
 
     // The worker filled the motion plan once the cards settled.
     const got = await call(client, "get_deck", { deckId: result.body.deckId });

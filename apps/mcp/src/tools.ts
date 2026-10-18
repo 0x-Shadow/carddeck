@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { desc, eq, inArray, count } from "drizzle-orm";
@@ -133,9 +134,25 @@ function contentBlocks(content?: readonly string[]): Block[] {
   return (content ?? []).map((line) => ({ type: "paragraph", text: [line] }));
 }
 
-/** Web-editor path for a deck (the app serves the editor at /deck/<id>). */
-function deckUrl(deckId: string): string {
-  return `/deck/${deckId}`;
+/**
+ * Read-only share link for a deck, or null when it is private.
+ *
+ * MCP decks are owned by a headless account, so the owner-only editor path
+ * would 404 for the human; `/view/<slug>` is the one URL that opens for them.
+ */
+function urlForDeck(deck: { isPublic: number; shareSlug: string | null }): string | null {
+  return deck.isPublic === 1 && deck.shareSlug ? `/view/${deck.shareSlug}` : null;
+}
+
+/**
+ * Decks created over MCP are born shared read-only: the agent account cannot
+ * log a browser in, so an unshared deck would be reachable only through
+ * `export_deck` files. 64 bits of slug entropy; there is deliberately no
+ * MCP tool to unpublish (the web share toggle is owner-gated, and the human
+ * is not the agent user).
+ */
+function shareFields(): { isPublic: number; shareSlug: string } {
+  return { isPublic: 1, shareSlug: randomBytes(8).toString("hex") };
 }
 
 /** Resolve a theme by id or by name (preset names seeded on first use). */
@@ -274,7 +291,7 @@ export async function createServer(opts: ServerOptions = {}): Promise<McpServer>
     {
       title: "Create deck",
       description:
-        "Generate a complete presentation from a prompt: outline, content, theme, and animation. Requires the Carddeck worker process; waits for generation and returns the deck id, editor url, and card titles.",
+        "Generate a complete presentation from a prompt: outline, content, theme, and animation. Requires the Carddeck worker process; waits for generation and returns the deck id, its read-only share link, and card titles.",
       inputSchema: createDeckSchema.shape,
     },
     guarded(async (args: z.infer<typeof createDeckSchema>) => {
@@ -294,6 +311,7 @@ export async function createServer(opts: ServerOptions = {}): Promise<McpServer>
           // The whole pipeline is enqueued now: generating from the first
           // moment (mirrors the HTTP routes' flip before the first poll).
           status: "generating",
+          ...shareFields(),
           motion:
             args.motion === undefined ? null : JSON.stringify({ preset: args.motion, slides: [] }),
         })
@@ -321,7 +339,7 @@ export async function createServer(opts: ServerOptions = {}): Promise<McpServer>
         const current = await requireDeck(deck.id);
         return envOk({
           deckId: deck.id,
-          url: deckUrl(deck.id),
+          url: urlForDeck(current),
           status: current.status,
           cards: cardList,
           note: "generation is still running; make sure the Carddeck worker is up (`npm run dev` or `npm run start -w apps/worker`), then call get_deck again",
@@ -334,14 +352,14 @@ export async function createServer(opts: ServerOptions = {}): Promise<McpServer>
         });
         return envFail(failed?.error ? `generation failed: ${failed.error}` : "generation failed", {
           deckId: deck.id,
-          url: deckUrl(deck.id),
+          url: urlForDeck(deck),
           status: "error",
         });
       }
 
       return envOk({
         deckId: deck.id,
-        url: deckUrl(deck.id),
+        url: urlForDeck(deck),
         status: "ready",
         cards: cardList,
       });
@@ -353,7 +371,7 @@ export async function createServer(opts: ServerOptions = {}): Promise<McpServer>
     {
       title: "Create deck from cards",
       description:
-        "Create a ready-to-present deck from card content you provide — no AI generation, no waiting. Each content line becomes a paragraph block.",
+        "Create a ready-to-present deck from card content you provide — no AI generation, no waiting. Each content line becomes a paragraph block. Returns the deck id and its read-only share link.",
       inputSchema: createDeckFromCardsSchema.shape,
     },
     guarded(async (args: z.infer<typeof createDeckFromCardsSchema>) => {
@@ -363,7 +381,14 @@ export async function createServer(opts: ServerOptions = {}): Promise<McpServer>
 
       const [deck] = await db
         .insert(t.deck)
-        .values({ userId, title: args.title.trim(), format: "presentation", themeId, status: "ready" })
+        .values({
+          userId,
+          title: args.title.trim(),
+          format: "presentation",
+          themeId,
+          status: "ready",
+          ...shareFields(),
+        })
         .returning();
 
       const inserted = await db
@@ -399,7 +424,7 @@ export async function createServer(opts: ServerOptions = {}): Promise<McpServer>
 
       return envOk({
         deckId: deck.id,
-        url: deckUrl(deck.id),
+        url: urlForDeck(deck),
         status: "ready",
         cards: inserted.map((c) => ({ id: c.id, title: c.title })),
       });
@@ -440,7 +465,7 @@ export async function createServer(opts: ServerOptions = {}): Promise<McpServer>
       const pending = inserted.filter((c) => c.status === "pending").length;
       return envOk({
         deckId: deck.id,
-        url: deckUrl(deck.id),
+        url: urlForDeck(deck),
         added: inserted,
         ...(pending > 0
           ? {
@@ -471,7 +496,7 @@ export async function createServer(opts: ServerOptions = {}): Promise<McpServer>
           title: deck.title,
           format: deck.format,
           status: deck.status,
-          url: deckUrl(deck.id),
+          url: urlForDeck(deck),
           isPublic: deck.isPublic === 1,
           shareSlug: deck.shareSlug,
           theme: themeRow ? { id: themeRow.id, name: themeRow.name } : null,
