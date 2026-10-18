@@ -247,7 +247,16 @@ export async function buildPptxBuffer(
   if (opts.motion && opts.motion.slides.length > 0) {
     const zip = await JSZip.loadAsync(buffer);
     await injectMotion(zip, opts.motion);
-    buffer = await zip.generateAsync({ type: "nodebuffer" });
+    // generateAsync types its nodebuffer as Buffer<ArrayBufferLike> while
+    // pres.write gives Buffer<ArrayBuffer>; rebuilding from the bytes keeps
+    // one concrete return type on both paths.
+    const regenerated = await zip.generateAsync({ type: "nodebuffer" });
+    buffer = Buffer.from(
+      regenerated.buffer.slice(
+        regenerated.byteOffset,
+        regenerated.byteOffset + regenerated.byteLength,
+      ) as ArrayBuffer,
+    );
   }
 
   return buffer;
