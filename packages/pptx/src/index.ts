@@ -6,5 +6,19 @@ export type {
   PrintFormat,
   PrintOptions,
 } from "./render-slides";
-export { buildPptxBuffer, type PptxTextItem, type HtmlConverter } from "./build-pptx";
+export {
+  buildPptxBuffer,
+  type BuildPptxOptions,
+  type PptxTextItem,
+  type HtmlConverter,
+} from "./build-pptx";
+export {
+  collectSlideImages,
+  resolveBlockImages,
+  type ImageResolver,
+  type ImageLayout,
+  type ImageMap,
+  type SlideImage,
+  type ResolvedImage,
+} from "./images";
 export { buildThemePotxBuffer } from "./theme-potx";

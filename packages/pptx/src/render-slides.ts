@@ -18,6 +18,7 @@
  * html2pptx consumes).
  */
 import type { Block, Inline, Theme } from "@carddeck/core";
+import { resolveBlockImages, type ImageMap, type ImageResolver } from "./images";
 
 /** Slide reference box: 16:9, matching PptxGenJS's 13.333x7.5in wide layout. */
 export const SLIDE_WIDTH = 1280;
@@ -62,8 +63,26 @@ function renderInlineHtml(runs: Inline[]): string {
   return out;
 }
 
+/** How image blocks render into slide HTML. */
+export interface ImageRenderOptions {
+  /**
+   * Resolved image data (src → data URL). When the map has an entry for a
+   * src, the print path emits a real `<img>`; a null entry (failed
+   * resolution) or an absent map degrades to the `[image: caption]` text
+   * placeholder.
+   */
+  images?: ImageMap;
+  /** Render image blocks as nothing at all (their bytes ride in separately). */
+  omitImages?: boolean;
+}
+
 /** Render a single block to inline-styled semantic HTML. */
-function renderBlockHtml(block: Block, theme: Theme, index: number): string {
+function renderBlockHtml(
+  block: Block,
+  theme: Theme,
+  index: number,
+  opts: ImageRenderOptions = {},
+): string {
   const ink = hex(theme.colors.ink);
   const muted = hex(theme.colors.muted);
   const accent = hex(theme.colors.accent);
@@ -94,6 +113,16 @@ function renderBlockHtml(block: Block, theme: Theme, index: number): string {
     case "divider":
       return `<p style="font-size:${FONT_SIZE.body};color:#${muted};margin:0 0 8pt 0;">———</p>`;
     case "image": {
+      if (opts.omitImages) return "";
+      if (opts.images && block.src) {
+        const dataUrl = opts.images.get(block.src);
+        if (dataUrl) {
+          const captionHtml = block.caption
+            ? `<figcaption style="font-family:${body};font-size:${FONT_SIZE.small};color:#${muted};margin:4pt 0 0 0;">${esc(block.caption)}</figcaption>`
+            : "";
+          return `<figure style="margin:0 0 8pt 0;"><img src="${esc(dataUrl)}" alt="${esc(block.caption ?? "")}" style="max-width:100%;max-height:300px;border-radius:6px;" />${captionHtml}</figure>`;
+        }
+      }
       const caption = block.caption ? esc(block.caption) : "image";
       return `<p style="font-family:${body};font-size:${FONT_SIZE.small};color:#${muted};margin:0 0 8pt 0;">[image: ${caption}]</p>`;
     }
@@ -101,7 +130,7 @@ function renderBlockHtml(block: Block, theme: Theme, index: number): string {
       // Flatten columns left-to-right; html2pptx has no column concept.
       return block.columns
         .map((col, ci) =>
-          col.map((b, bi) => renderBlockHtml(b, theme, ci * 100 + bi)).join(""),
+          col.map((b, bi) => renderBlockHtml(b, theme, ci * 100 + bi, opts)).join(""),
         )
         .join("");
     case "chart": {
@@ -157,7 +186,7 @@ export interface SlideDeck {
 }
 
 /** Inner slide content (heading + blocks) without the document wrapper. */
-function buildSlideBody(deck: SlideDeck, card: SlideInput): string {
+function buildSlideBody(deck: SlideDeck, card: SlideInput, opts: ImageRenderOptions = {}): string {
   const theme = deck.theme;
   const title = card.title || deck.title;
   // Generated cards open with a heading block that repeats the card title —
@@ -168,7 +197,7 @@ function buildSlideBody(deck: SlideDeck, card: SlideInput): string {
     : [
         `<h1 style="font-family:${theme.fonts.display};font-size:${FONT_SIZE.title};font-weight:bold;color:#${hex(theme.colors.ink)};margin:0 0 16pt 0;">${esc(title)}</h1>`,
       ];
-  return [...heading, ...card.blocks.map((b, i) => renderBlockHtml(b, theme, i))].join("");
+  return [...heading, ...card.blocks.map((b, i) => renderBlockHtml(b, theme, i, opts))].join("");
 }
 
 /** Plain text of an inline run list (strings and formatted parts). */
@@ -194,18 +223,25 @@ function startsWithTitleHeading(blocks: Block[], title: string): boolean {
 export async function renderSlideHtml(
   deck: SlideDeck,
   card: SlideInput,
+  opts: ImageRenderOptions = {},
 ): Promise<string> {
-  return wrapDocument(buildSlideBody(deck, card), card.title || deck.title, deck.theme);
+  return wrapDocument(buildSlideBody(deck, card, opts), card.title || deck.title, deck.theme);
 }
 
 /** Render every card to a slide document, preserving order. */
 export async function renderSlidesHtml(
   deck: SlideDeck,
   cards: SlideInput[],
+  opts: { imageMode?: "placeholder" | "omit" } = {},
 ): Promise<SlideHtml[]> {
+  // The .pptx path embeds images itself (via `buildPptxBuffer`'s resolver), so
+  // callers that supply images pass `imageMode: "omit"` — the HTML then has no
+  // image markup at all and nothing doubles up on the slide.
+  const bodyOpts: ImageRenderOptions =
+    opts.imageMode === "omit" ? { omitImages: true } : {};
   const out: SlideHtml[] = [];
   for (const card of cards) {
-    out.push({ title: card.title, html: await renderSlideHtml(deck, card) });
+    out.push({ title: card.title, html: await renderSlideHtml(deck, card, bodyOpts) });
   }
   return out;
 }
@@ -215,6 +251,13 @@ export type PrintFormat = "presentation" | "document";
 export interface PrintOptions {
   /** `presentation` → one 16:9 page per card; `document` → flowing A4 text. */
   format?: PrintFormat;
+  /**
+   * Resolve image blocks to data URLs that get inlined into the print HTML.
+   * The PDF pipeline's headless browser has no session cookie and no base URL
+   * for relative `/api/...` paths, so images must travel inside the document.
+   * Unresolved images keep the `[image: caption]` placeholder.
+   */
+  resolveImage?: ImageResolver;
 }
 
 /**
@@ -235,6 +278,9 @@ export async function renderPrintHtml(
   opts: PrintOptions = {},
 ): Promise<string> {
   const format: PrintFormat = opts.format ?? "presentation";
+  const images: ImageRenderOptions = opts.resolveImage
+    ? { images: await resolveBlockImages(cards, opts.resolveImage) }
+    : {};
   const theme = deck.theme;
   const ink = hex(theme.colors.ink);
   const page = hex(theme.colors.page);
@@ -252,7 +298,7 @@ export async function renderPrintHtml(
         `.print-doc>section{margin:0 0 14pt 0;}` +
         `</style></head>`,
       `<body><div class="print-doc">${cards
-        .map((c) => `<section>${buildSlideBody(deck, c)}</section>`)
+        .map((c) => `<section>${buildSlideBody(deck, c, images)}</section>`)
         .join("")}</div></body></html>`,
     ].join("");
   }
@@ -272,7 +318,7 @@ export async function renderPrintHtml(
       `.slide-page{${pageStyle}page-break-after:always;break-after:page;}` +
       `</style></head>`,
     `<body>${cards
-      .map((c) => `<section class="slide-page" style="${pageStyle}">${buildSlideBody(deck, c)}</section>`)
+      .map((c) => `<section class="slide-page" style="${pageStyle}">${buildSlideBody(deck, c, images)}</section>`)
       .join("")}</body></html>`,
   ].join("");
 }

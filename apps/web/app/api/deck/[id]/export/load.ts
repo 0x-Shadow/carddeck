@@ -1,19 +1,11 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import * as t from "@/drizzle/schema";
-import { and, asc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { resolveOwnedDeck } from "@/lib/deck-access";
-import { rowToTheme } from "@/lib/themes-presets";
-import { PRESET_THEMES, type Block, type Theme } from "@carddeck/core";
+import { loadSlideInputs, type ExportDeckData } from "@/lib/export-slides";
 
-export interface ExportableDeck {
-  id: string;
-  title: string;
-  /** "presentation" | "document" — selects the PDF page geometry. */
-  format: string;
-  theme: Theme;
-  cards: Array<{ id: string; title: string; blocks: Block[]; position: number }>;
-}
+export type ExportableDeck = ExportDeckData;
 
 /**
  * Load a deck for export.
@@ -22,7 +14,8 @@ export interface ExportableDeck {
  * it) OR the caller owns it. Private decks require an authenticated owner, so
  * a non-owner gets the same 404 as a missing deck — existence stays hidden.
  * Only ready cards export; a deck still generating must not leak half-built
- * slides.
+ * slides. The deck data itself comes from the shared loader (`lib/
+ * export-slides.ts`), so the HTTP routes and the MCP agent cannot drift.
  */
 export async function loadExportableDeck(
   id: string,
@@ -41,42 +34,15 @@ export async function loadExportableDeck(
     if (owned.res) return { res: owned.res };
   }
 
-  const [cards, themeRow] = await Promise.all([
-    db.query.card.findMany({
-      where: (c, { and, eq }) => and(eq(c.deckId, id), eq(c.status, "ready")),
-      orderBy: (c, { asc }) => asc(c.position),
-    }),
-    db.query.theme.findFirst({ where: (th, { eq }) => eq(th.id, deck.themeId) }),
-  ]);
-
-  return {
-    data: {
-      id: deck.id,
-      title: deck.title,
-      format: deck.format,
-      theme: rowToTheme(themeRow) ?? PRESET_THEMES[0],
-      cards: cards.map((c) => ({
-        id: c.id,
-        title: c.title,
-        blocks: parseBlocks(c.blocks),
-        position: c.position,
-      })),
-    },
-  };
+  const data = await loadSlideInputs(id);
+  if (!data) {
+    return { res: NextResponse.json({ error: "not found" }, { status: 404 }) };
+  }
+  return { data };
 }
 
 /** Filesystem/content-type-safe download name. */
 export function exportFilename(title: string, ext: string): string {
   const clean = title.replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "-");
   return `${clean || "deck"}.${ext}`;
-}
-
-/** Parse a card's stored blocks JSON; tolerate null/corrupt rows. */
-function parseBlocks(raw: string): Block[] {
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? (parsed as Block[]) : [];
-  } catch {
-    return [];
-  }
 }

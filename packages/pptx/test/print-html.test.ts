@@ -49,3 +49,63 @@ describe("renderPrintHtml", () => {
     expect(html).toContain("a &lt; b");
   });
 });
+
+describe("renderPrintHtml image inlining", () => {
+  const imageCard = (src: string): Block => ({
+    type: "image",
+    src,
+    layout: "full",
+  });
+
+  it("inlines resolved images as data-URL <img> tags", async () => {
+    const dataUrl = "data:image/png;base64,AAAA";
+    const html = await renderPrintHtml(
+      deck,
+      [{ id: "a", title: "Cover", blocks: [imageCard("local:hero")] }],
+      {
+        format: "presentation",
+        resolveImage: async (src) => (src === "local:hero" ? { dataUrl } : null),
+      },
+    );
+    expect(html).toContain(`src="${dataUrl}"`);
+    expect(html).not.toContain("[image:");
+  });
+
+  it("keeps the captioned placeholder when an image fails to resolve", async () => {
+    const html = await renderPrintHtml(
+      deck,
+      [{ id: "a", title: "Cover", blocks: [imageCard("local:gone")] }],
+      {
+        format: "presentation",
+        resolveImage: async () => null,
+      },
+    );
+    expect(html).toContain("[image: image]");
+  });
+
+  it("leaves images as placeholders when no resolver is supplied", async () => {
+    const html = await renderPrintHtml(deck, [
+      { id: "a", title: "Cover", blocks: [imageCard("/api/deck/d1/assets/a1")] },
+    ]);
+    expect(html).toContain("[image: image]");
+    expect(html).not.toContain("<img");
+  });
+
+  it("resolves each unique src exactly once across the deck", async () => {
+    const seen: string[] = [];
+    await renderPrintHtml(
+      deck,
+      [
+        { id: "a", title: "One", blocks: [imageCard("s1"), imageCard("s2")] },
+        { id: "b", title: "Two", blocks: [imageCard("s1")] },
+      ],
+      {
+        resolveImage: async (src) => {
+          seen.push(src);
+          return null;
+        },
+      },
+    );
+    expect(seen.sort()).toEqual(["s1", "s2"]);
+  });
+});

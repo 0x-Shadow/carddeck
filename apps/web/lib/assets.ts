@@ -95,3 +95,28 @@ export async function assetFilePath(
   const ext = EXT_BY_MIME[row.mime as AcceptedImageMime] ?? "bin";
   return path.join(assetsRoot(deckId), `${assetId}.${ext}`);
 }
+
+/**
+ * Read an asset as a base64 data URL (deck-scoped, row-validated like
+ * `assetFilePath`). Returns null when the row or the file is missing — this
+ * is what the exporters' image resolvers use to inline bytes.
+ */
+export async function readAssetDataUrl(
+  deckId: string,
+  assetId: string,
+): Promise<string | null> {
+  const filePath = await assetFilePath(deckId, assetId);
+  if (!filePath) return null;
+  const db = getDb();
+  const row = await db.query.asset.findFirst({
+    where: (a, { and, eq }) => and(eq(a.id, assetId), eq(a.deckId, deckId)),
+  });
+  if (!row) return null;
+  let bytes: Buffer;
+  try {
+    bytes = await fs.readFile(filePath);
+  } catch {
+    return null;
+  }
+  return `data:${row.mime};base64,${bytes.toString("base64")}`;
+}

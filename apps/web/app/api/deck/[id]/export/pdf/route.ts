@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { chromium } from "playwright";
 import { renderPrintHtml, type PrintFormat } from "@carddeck/pptx";
 import { loadExportableDeck, exportFilename } from "../load";
+import { createImageResolver } from "@/lib/export-slides";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -39,7 +40,12 @@ export async function GET(_req: Request, { params }: Params) {
     const html = await renderPrintHtml(
       { title, theme },
       cards,
-      { format: (format === "document" ? "document" : "presentation") as PrintFormat },
+      {
+        format: (format === "document" ? "document" : "presentation") as PrintFormat,
+        // The print browser has no session and no base URL: images inline as
+        // data URLs so private decks and remote pictures both survive.
+        resolveImage: createImageResolver(id),
+      },
     );
     await page.setContent(html, { waitUntil: "load" });
     const buffer = await page.pdf({
