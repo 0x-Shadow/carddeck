@@ -1,6 +1,12 @@
 import type { AIProvider } from "@carddeck/ai";
 import { createProvider } from "@carddeck/ai";
-import type { Block, OutlineCard } from "@carddeck/core";
+import {
+  parseMotionPlan,
+  planMotionForDeck,
+  type Block,
+  type MotionPlan,
+  type OutlineCard,
+} from "@carddeck/core";
 import { getDb, type DB } from "../../web/lib/db";
 import * as t from "../../web/drizzle/schema";
 import { claimNextJob, updateJob } from "../../web/lib/queue";
@@ -69,6 +75,46 @@ async function setDeckStatus(db: DB, deckId: string, status: string): Promise<vo
   await db.update(t.deck).set({ status, updatedAt: Date.now() }).where(eq(t.deck.id, deckId));
 }
 
+/**
+ * Expand the deck's motion preset into a full plan once its cards have settled.
+ *
+ * Called right before a successful cards job flips the deck to `ready`, so any
+ * reader of a ready deck (editor, present mode, export, MCP) sees a complete
+ * plan. No-op unless the deck carries a real preset with no plan yet. Motion is
+ * decoration: a provider that can't design (or throws) falls back to the
+ * deterministic `planMotionForDeck`, and neither can fail the run.
+ */
+async function fillMotionPlan(db: DB, deckId: string, provider: AIProvider): Promise<void> {
+  // Re-read: the job-start snapshot's blocks predate this run's card writes.
+  const deck = await db.query.deck.findFirst({ where: (d, { eq }) => eq(d.id, deckId) });
+  const motion = deck ? parseMotionPlan(deck.motion) : null;
+  if (!deck || !motion || motion.preset === "none" || motion.slides.length > 0) return;
+
+  const cards = await db.query.card.findMany({
+    where: (c, { eq }) => eq(c.deckId, deckId),
+    orderBy: (c, { asc }) => asc(c.position),
+  });
+
+  let designed: MotionPlan | undefined;
+  try {
+    designed = await provider.generateMotion?.({ preset: motion.preset, cards });
+  } catch {
+    designed = undefined;
+  }
+
+  const slides =
+    designed && designed.slides.length > 0
+      ? designed.slides
+      : planMotionForDeck(motion.preset, cards, deckId).slides;
+
+  // Store the deck's own preset: the picker's selection must survive a model
+  // that drifted to a different preset in its design.
+  await db
+    .update(t.deck)
+    .set({ motion: JSON.stringify({ preset: motion.preset, slides }), updatedAt: Date.now() })
+    .where(eq(t.deck.id, deckId));
+}
+
 /** True while the job may keep running (re-read from the DB before each card). */
 async function isCancelled(db: DB, jobId: string): Promise<boolean> {
   const row = await db.query.generationJob.findFirst({
@@ -128,7 +174,9 @@ export async function runOutlineJob(job: Job, deps: PipelineDeps = {}): Promise<
  * Cards already marked `ready` are skipped, so re-running after a partial
  * failure is a retry that keeps completed work. A concurrency pool of
  * `CONCURRENCY` streams results back; the job's status is re-read from the DB
- * before each dispatch so a cancel stops the remaining cards.
+ * before each dispatch so a cancel stops the remaining cards. Once every card
+ * is ready, the deck's motion plan is filled in before the deck flips to
+ * `ready` (see `fillMotionPlan`).
  */
 export async function runCardsJob(job: Job, deps: PipelineDeps = {}): Promise<void> {
   const db = deps.db ?? getDb();
@@ -152,6 +200,7 @@ export async function runCardsJob(job: Job, deps: PipelineDeps = {}): Promise<vo
     if (total === 0) {
       // Everything is already generated — nothing to do but close out the job.
       await setProgress(job.id, 0, 0);
+      await fillMotionPlan(db, job.deckId, provider);
       await setDeckStatus(db, job.deckId, "ready");
       await updateJob(job.id, { status: "done", error: null });
       return;
@@ -227,6 +276,7 @@ export async function runCardsJob(job: Job, deps: PipelineDeps = {}): Promise<vo
       return;
     }
 
+    await fillMotionPlan(db, job.deckId, provider);
     await setDeckStatus(db, job.deckId, "ready");
     await updateJob(job.id, { status: "done", error: null });
   } catch (err) {

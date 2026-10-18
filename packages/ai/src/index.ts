@@ -6,6 +6,7 @@ export type {
   AIProvider,
   CardRequest,
   DeckFormat,
+  MotionRequest,
   OutlineRequest,
   ReviseRequest,
   ReviseResult,

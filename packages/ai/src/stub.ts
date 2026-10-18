@@ -117,4 +117,14 @@ export class StubProvider implements AIProvider {
     // Echo blocks back (deterministic) with a note describing the instruction.
     return { blocks: req.blocks, note: `Applied: ${req.instruction}` };
   }
+
+  /**
+   * The stub designs no custom motion: the worker always expands the deck's
+   * preset deterministically via `planMotionForDeck`. That is the same path
+   * OpenAI falls back to when its design is missing or invalid, so keyless
+   * decks animate exactly like the zero-key parity case promises.
+   */
+  async generateMotion(): Promise<undefined> {
+    return undefined;
+  }
 }

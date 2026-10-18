@@ -1,7 +1,23 @@
-import type { Block, OutlineCard } from "@carddeck/core";
-import type { AIProvider, CardRequest, OutlineRequest, ReviseRequest, ReviseResult } from "./types";
-import { cardSystem, cardUser, outlineSystem, outlineUser, reviseSystem, reviseUser } from "./prompts";
-import { validateBlocks, validateOutline } from "./validate";
+import type { Block, MotionPlan, OutlineCard } from "@carddeck/core";
+import type {
+  AIProvider,
+  CardRequest,
+  MotionRequest,
+  OutlineRequest,
+  ReviseRequest,
+  ReviseResult,
+} from "./types";
+import {
+  cardSystem,
+  cardUser,
+  motionSystem,
+  motionUser,
+  outlineSystem,
+  outlineUser,
+  reviseSystem,
+  reviseUser,
+} from "./prompts";
+import { validateBlocks, validateMotionPlan, validateOutline } from "./validate";
 
 export interface OpenAIProviderOptions {
   apiKey: string;
@@ -99,5 +115,21 @@ export class OpenAIProvider implements AIProvider {
     const blocks = validateBlocks(obj.blocks);
     const note = typeof obj.note === "string" ? obj.note : undefined;
     return note === undefined ? { blocks } : { blocks, note };
+  }
+
+  /**
+   * Best-effort deck motion design. A missing or invalid design yields
+   * `undefined` (the caller falls back to the deterministic expansion);
+   * upstream/transport errors still throw so callers can choose how loud to
+   * be about them.
+   */
+  async generateMotion(req: MotionRequest): Promise<MotionPlan | undefined> {
+    const raw = await this.chat(motionSystem(), motionUser(req));
+    const obj = raw as { motion?: unknown };
+    try {
+      return validateMotionPlan(obj.motion, req.cards.length);
+    } catch {
+      return undefined;
+    }
   }
 }

@@ -1,4 +1,4 @@
-import type { OutlineRequest, CardRequest, ReviseRequest } from "./types";
+import type { OutlineRequest, CardRequest, MotionRequest, ReviseRequest } from "./types";
 
 /** System prompt for outline generation: demands a strict JSON array. */
 export function outlineSystem(): string {
@@ -40,4 +40,34 @@ export function reviseSystem(): string {
 
 export function reviseUser(req: ReviseRequest): string {
   return `Instruction: ${req.instruction}\nCard: ${req.cardTitle}\nCurrent blocks: ${JSON.stringify(req.blocks)}`;
+}
+
+/** Lenient block count: cards arrive as JSON strings (DB) or arrays (API). */
+function blockCount(raw: unknown): number {
+  let value = raw;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value) as unknown;
+    } catch {
+      return 0;
+    }
+  }
+  return Array.isArray(value) ? value.length : 0;
+}
+
+/** System prompt for deck motion design: a JSON object with a motion plan. */
+export function motionSystem(): string {
+  return [
+    "You are a presentation motion designer.",
+    'Return ONLY a JSON object: {"motion": {"preset": ..., "slides": [{"transition": "fade|push|wipe|cover|split", "builds": [{"effect": "fade|wipeUp|flyLeft|zoom", "delayMs": number}]}]}}.',
+    "One slides entry per deck slide, in order; the first build is the title, then one build per content block; delayMs is 0-5000.",
+    "No prose, no markdown fences.",
+  ].join(" ");
+}
+
+export function motionUser(req: MotionRequest): string {
+  const lines = req.cards
+    .map((c, i) => `${i + 1}. "${c.title}" — title + ${blockCount(c.blocks)} content block(s)`)
+    .join("\n");
+  return `Deck motion preset: ${req.preset}.\nSlides:\n${lines}\nDesign the animation plan for every slide.`;
 }
