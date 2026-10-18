@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import * as t from "@/drizzle/schema";
-import { desc } from "drizzle-orm";
+import { count, desc, inArray } from "drizzle-orm";
 import { requireUser } from "@/lib/guard";
 import { seedPresetThemes } from "@/lib/themes-presets";
 
@@ -69,5 +69,51 @@ export async function GET() {
     where: (d, { eq }) => eq(d.userId, auth.user.id),
     orderBy: (d, { desc }) => desc(d.updatedAt),
   });
-  return NextResponse.json({ decks }, { status: 200 });
+  const ownIds = decks.map((deck) => deck.id);
+  const ownCounts = new Map<string, number>();
+  if (ownIds.length) {
+    const rows = await db
+      .select({ deckId: t.card.deckId, n: count() })
+      .from(t.card)
+      .where(inArray(t.card.deckId, ownIds))
+      .groupBy(t.card.deckId);
+    for (const row of rows) ownCounts.set(row.deckId, Number(row.n));
+  }
+  const decksWithCounts = decks.map((deck) => ({
+    ...deck,
+    cardCount: ownCounts.get(deck.id) ?? 0,
+  }));
+
+  const agentEmail = process.env.CARDDECK_MCP_USER?.trim() || "mcp@carddeck.local";
+  const agent = await db.query.user.findFirst({
+    where: (u, { eq }) => eq(u.email, agentEmail),
+    columns: { id: true },
+  });
+  let agentDecks: Array<Record<string, unknown>> = [];
+  if (agent && agent.id !== auth.user.id) {
+    const shared = await db.query.deck.findMany({
+      where: (d, { and, eq }) => and(eq(d.userId, agent.id), eq(d.isPublic, 1)),
+      orderBy: (d, { desc }) => desc(d.updatedAt),
+    });
+    const ids = shared.map((deck) => deck.id);
+    const counts = new Map<string, number>();
+    if (ids.length) {
+      const rows = await db
+        .select({ deckId: t.card.deckId, n: count() })
+        .from(t.card)
+        .where(inArray(t.card.deckId, ids))
+        .groupBy(t.card.deckId);
+      for (const row of rows) counts.set(row.deckId, Number(row.n));
+    }
+    agentDecks = shared.map((deck) => ({
+      id: deck.id,
+      title: deck.title,
+      format: deck.format,
+      status: deck.status,
+      cardCount: counts.get(deck.id) ?? 0,
+      updatedAt: deck.updatedAt,
+      shareSlug: deck.shareSlug,
+    }));
+  }
+  return NextResponse.json({ decks: decksWithCounts, agentDecks }, { status: 200 });
 }

@@ -1,4 +1,8 @@
 import { describe, it, expect } from "vitest";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
 import {
   freshDb,
   seedUser,
@@ -53,6 +57,83 @@ describe("deck + card REST", () => {
     const titles = body.decks.map((d: any) => d.title);
     expect(titles).toContain("Mine");
     expect(titles).not.toContain("Theirs");
+  });
+
+  it("GET /api/deck also lists only public decks owned by the MCP agent", async () => {
+    freshDb();
+    const me = await seedUser();
+    const agent = await seedUser("mcp@carddeck.local");
+    const other = await seedUser();
+    const themeId = await seedTheme();
+    const agentDeck = await seedDeck(agent.id, themeId, "Agent project");
+    const privateAgentDeck = await seedDeck(agent.id, themeId, "Private agent project");
+    await seedDeck(other.id, themeId, "Other user's project");
+    const db = getDb();
+    await db.update(t.deck).set({ status: "ready", isPublic: 1, shareSlug: "public-agent" }).where(eq(t.deck.id, agentDeck));
+    await db.update(t.deck).set({ status: "ready" }).where(eq(t.deck.id, privateAgentDeck));
+    useSession(me.id);
+
+    const { GET } = await import("@/app/api/deck/route");
+    const { status, body } = await readJson(await GET());
+    expect(status).toBe(200);
+    expect(body.agentDecks.map((deck: any) => deck.id)).toContain(agentDeck);
+    expect(body.agentDecks.map((deck: any) => deck.id)).not.toContain(privateAgentDeck);
+    expect(body.agentDecks.map((deck: any) => deck.title)).not.toContain("Other user's project");
+  });
+
+  it("POST /api/deck/[id]/duplicate makes a private editable copy with local images", async () => {
+    const originalDataDir = process.env.DATA_DIR;
+    const dataDir = mkdtempSync(path.join(os.tmpdir(), "carddeck-duplicate-"));
+    process.env.DATA_DIR = dataDir;
+    try {
+      freshDb();
+      const owner = await seedUser();
+      const agent = await seedUser("mcp@carddeck.local");
+      const themeId = await seedTheme();
+      const sourceId = await seedDeck(agent.id, themeId, "Agent deck");
+      const db = getDb();
+      await db.update(t.deck).set({ status: "ready", isPublic: 1, shareSlug: "shared-agent" }).where(eq(t.deck.id, sourceId));
+      const assetId = randomUUID();
+      const sourceAssetsDir = path.join(dataDir, "assets", sourceId);
+      mkdirSync(sourceAssetsDir, { recursive: true });
+      const imageBytes = Buffer.from("image bytes");
+      writeFileSync(path.join(sourceAssetsDir, `${assetId}.png`), imageBytes);
+      await db.insert(t.asset).values({ id: assetId, deckId: sourceId, mime: "image/png", sizeBytes: imageBytes.length });
+      const sourceUrl = `/api/deck/${sourceId}/assets/${assetId}`;
+      await db.insert(t.card).values({
+        deckId: sourceId,
+        position: 0,
+        title: "Cover",
+        status: "ready",
+        blocks: JSON.stringify([{ type: "image", src: sourceUrl, layout: "side" }]),
+      });
+      useSession(owner.id);
+
+      const { POST } = await import("@/app/api/deck/[id]/duplicate/route");
+      const result = await readJson(await POST(
+        jsonRequest(`http://t/api/deck/${sourceId}/duplicate`, "POST"),
+        { params: Promise.resolve({ id: sourceId }) },
+      ));
+      expect(result.status).toBe(201);
+      expect(result.body.deck.userId).toBe(owner.id);
+      expect(result.body.deck.isPublic).toBe(0);
+      expect(result.body.deck.title).toBe("Agent deck (Copy)");
+
+      const copyCards = await db.query.card.findMany({
+        where: (card, { eq }) => eq(card.deckId, result.body.deck.id),
+      });
+      const copiedBlocks = JSON.parse(copyCards[0].blocks);
+      expect(copiedBlocks[0].src).toMatch(new RegExp(`^/api/deck/${result.body.deck.id}/assets/`));
+      expect(copiedBlocks[0].src).not.toBe(sourceUrl);
+      const copiedAssetId = copiedBlocks[0].src.split("/").at(-1);
+      const copiedFile = path.join(dataDir, "assets", result.body.deck.id, `${copiedAssetId}.png`);
+      expect(existsSync(copiedFile)).toBe(true);
+      expect(readFileSync(copiedFile).equals(imageBytes)).toBe(true);
+    } finally {
+      if (originalDataDir === undefined) delete process.env.DATA_DIR;
+      else process.env.DATA_DIR = originalDataDir;
+      rmSync(dataDir, { recursive: true, force: true });
+    }
   });
 
   it("GET /api/deck/[id] 404s for a deck the user does not own", async () => {

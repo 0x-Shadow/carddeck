@@ -105,6 +105,20 @@ describe("buildPptxBuffer image embedding", () => {
     expect(xml).toContain('<a:off x="0" y="0"/>'); // behind: x=0 y=0
   });
 
+  it("keeps text out of the side-image column", async () => {
+    const buf = await buildPptxBuffer([{ html: "<h1>Text</h1>" }], {
+      converter: () => [{ text: "A long paragraph that should wrap before the image." }],
+      resolveImage: async () => ({ dataUrl: TINY_PNG_DATA_URL }),
+      images: [[{ src: "side.png", layout: "side" }]],
+    });
+    const xml = await slideXml(buf, 1);
+    const textShape = /<p:sp>[\s\S]*?<a:off x="(\d+)" y="(\d+)"\/>\s*<a:ext cx="(\d+)" cy="(\d+)"\/>/.exec(xml);
+    const imageOffset = /<p:pic>[\s\S]*?<a:off x="(\d+)" y="(\d+)"\/>/.exec(xml);
+    expect(textShape).not.toBeNull();
+    expect(imageOffset).not.toBeNull();
+    expect(Number(textShape![1]) + Number(textShape![3])).toBeLessThan(Number(imageOffset![1]));
+  });
+
   it("draws the behind image under the text as a 60% wash", async () => {
     const buf = await buildPptxBuffer([{ html: "<h1>Cover</h1>" }], {
       converter: () => [{ text: "Title" }, { text: "Body" }],

@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { resolveOwnedDeck } from "@/lib/deck-access";
 import {
   MAX_ASSET_BYTES,
-  isAcceptedImageMime,
   saveAsset,
   assetPublicUrl,
   sniffImageMime,
@@ -101,9 +100,6 @@ export async function POST(req: Request, { params }: Params) {
   const file = form.get("file");
   if (!(file instanceof File)) {
     return NextResponse.json({ error: "missing file field" }, { status: 400 });
-  }
-  if (!isAcceptedImageMime(file.type)) {
-    return NextResponse.json({ error: "unsupported image type" }, { status: 400 });
   }
   if (file.size > MAX_ASSET_BYTES) {
     return NextResponse.json({ error: "file too large (max 10MB)" }, { status: 413 });

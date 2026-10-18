@@ -35,6 +35,14 @@ describe("agent + self-hosting config", () => {
     expect(cfg.mcp.carddeck).toBeUndefined();
   });
 
+  it("wires Carddeck into VS Code as a workspace stdio MCP server", () => {
+    const cfg = readJson(".vscode/mcp.json") as any;
+    const entry = cfg.servers?.carddeck;
+    expect(entry).toBeDefined();
+    expect(entry.type).toBe("stdio");
+    expect(entry.command).toBe("${workspaceFolder}/apps/mcp/bin/carddeck-mcp");
+  });
+
   it("ships an executable wrapper that pins the server's working directory", () => {
     const rel = "apps/mcp/bin/carddeck-mcp";
     const script = read(rel);

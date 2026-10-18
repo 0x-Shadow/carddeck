@@ -18,7 +18,7 @@
  * because PowerPoint hides an animated shape until its effect runs — omitting
  * the `set` leaves shapes blank until the effect fires.
  */
-import type { EntranceKind, MotionPlan, SlideMotion, TransitionKind } from "@carddeck/core";
+import { MAX_MOTION_BUILDS, type EntranceKind, type MotionPlan, type SlideMotion, type TransitionKind } from "@carddeck/core";
 import type JSZip from "jszip";
 
 /** `<p:transition>` for one slide. */
@@ -136,6 +136,17 @@ export function shapeIdsInSlideXml(xml: string): number[] {
   return ids.sort((a, b) => a - b);
 }
 
+/** Picture-shape ids in document order, kept separate from text build targets. */
+export function pictureIdsInSlideXml(xml: string): number[] {
+  const ids: number[] = [];
+  const pictureRe = /<p:pic>([\s\S]*?)<\/p:pic>/g;
+  for (let match = pictureRe.exec(xml); match; match = pictureRe.exec(xml)) {
+    const idMatch = /<p:cNvPr[^>]*\sid="(\d+)"/.exec(match[1]);
+    if (idMatch) ids.push(Number(idMatch[1]));
+  }
+  return ids.sort((a, b) => a - b);
+}
+
 /**
  * `<p:timing>` for one slide: a single click group whose first shape is a
  * `clickEffect` and the rest `withEffect`, each at its plan `delayMs`.
@@ -143,21 +154,36 @@ export function shapeIdsInSlideXml(xml: string): number[] {
  * Builds beyond the shapes actually on the slide are dropped rather than
  * targeting a missing shape id (which PowerPoint treats as a corrupt file).
  */
-export function timingXml(builds: SlideMotion["builds"], shapeIds: number[]): string {
+export function timingXml(
+  builds: SlideMotion["builds"],
+  shapeIds: number[],
+  pictureIds: number[] = [],
+): string {
   // 1–4 are taken by the fixed tmRoot/mainSeq/group skeleton below.
   let id = 5;
   const nextId = () => id++;
 
-  const entries = builds
-    .slice(0, shapeIds.length)
+  const textBuilds = builds.slice(0, shapeIds.length);
+  const pictureBuilds = pictureIds
+    .slice(0, Math.max(0, MAX_MOTION_BUILDS - textBuilds.length))
+    .map((_, index) => ({
+      effect: "zoom" as const,
+      delayMs: (textBuilds.at(-1)?.delayMs ?? 0) + 180 + index * 180,
+    }));
+  const targets = [
+    ...textBuilds.map((build, index) => ({ build, shapeId: shapeIds[index] })),
+    ...pictureBuilds.map((build, index) => ({ build, shapeId: pictureIds[index] })),
+  ];
+
+  const entries = targets
     .map((build, i) => {
-      const shapeId = shapeIds[i];
+      const shapeId = build.shapeId;
       const nodeType = i === 0 ? "clickEffect" : "withEffect";
       return (
-        `<p:par><p:cTn id="${nextId()}" presetID="${PRESET_ID[build.effect]}" ` +
+        `<p:par><p:cTn id="${nextId()}" presetID="${PRESET_ID[build.build.effect]}" ` +
         `presetClass="entr" fill="hold" grpId="0" nodeType="${nodeType}">` +
-        `<p:stCondLst><p:cond delay="${build.delayMs}"/></p:stCondLst>` +
-        `<p:childTnLst>${effectXml(build.effect, shapeId, nextId)}</p:childTnLst>` +
+        `<p:stCondLst><p:cond delay="${build.build.delayMs}"/></p:stCondLst>` +
+        `<p:childTnLst>${effectXml(build.build.effect, shapeId, nextId)}</p:childTnLst>` +
         `</p:cTn></p:par>`
       );
     })
@@ -165,9 +191,8 @@ export function timingXml(builds: SlideMotion["builds"], shapeIds: number[]): st
 
   if (!entries) return "";
 
-  const bldLst = shapeIds
-    .slice(0, builds.length)
-    .map((shapeId) => `<p:bldP spid="${shapeId}" grpId="0"/>`)
+  const bldLst = targets
+    .map(({ shapeId }) => `<p:bldP spid="${shapeId}" grpId="0"/>`)
     .join("");
 
   return (
@@ -206,8 +231,9 @@ export async function injectMotion(zip: JSZip, plan: MotionPlan): Promise<void> 
     }
     const xml = await file.async("string");
     const shapeIds = shapeIdsInSlideXml(xml);
+    const pictureIds = pictureIdsInSlideXml(xml);
     const transition = transitionXml(slide.transition);
-    const timing = timingXml(slide.builds, shapeIds);
+    const timing = timingXml(slide.builds, shapeIds, pictureIds);
     // <p:transition> and <p:timing> follow the slide content, before </p:sld>.
     const updated = xml.replace("</p:sld>", `${transition}${timing}</p:sld>`);
     zip.file(path, updated);

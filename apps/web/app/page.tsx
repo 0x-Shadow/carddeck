@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { currentUser } from "@/lib/guard";
 
 /**
  * Marketing landing — a server component: no session probing, fully static.
@@ -35,7 +37,9 @@ const STEPS = [
   },
 ];
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  if (await currentUser()) redirect("/dashboard");
+
   return (
     <main className="home-page">
       <header className="home-header">
@@ -46,6 +50,9 @@ export default function LandingPage() {
           Carddeck
         </Link>
         <nav className="home-nav" aria-label="Primary">
+          <Link className="home-nav-link" href="/dashboard">
+            Projects
+          </Link>
           <Link className="home-nav-link" href="/login">
             Sign in
           </Link>

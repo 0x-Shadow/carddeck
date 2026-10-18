@@ -1,5 +1,7 @@
 # Carddeck
 
+[![CI](https://github.com/0x-Shadow/carddeck/actions/workflows/ci.yml/badge.svg)](https://github.com/0x-Shadow/carddeck/actions/workflows/ci.yml)
+
 A clean-room, Gamma-style AI presentation studio: describe your deck, reshape
 the generated outline, watch themed cards stream in card-by-card, then export a
 **real, editable PowerPoint (.pptx)** — or a PDF — in one click. Works with zero
@@ -49,6 +51,7 @@ Open http://localhost:3000, create an account, and make a deck. The default
 **StubProvider** is deterministic and offline — same prompt, same deck — so the
 whole product is usable before you wire up any AI credentials. The SQLite
 database is created (and migrated) automatically under `DATA_DIR`.
+Local databases, uploaded images, and generated exports are excluded from Git.
 
 ## Agent integrations (MCP)
 
@@ -56,6 +59,32 @@ Carddeck ships a local **MCP server** ([`apps/mcp`](apps/mcp)): point OpenCode,
 Claude Code, Codex, or any MCP client at it and your agent can build decks from
 a prompt, add images from URLs or local folders, set themes and animations,
 and export `.pptx` / `.pdf` / `.potx` files where you want them.
+
+### Install for an agent
+
+```bash
+git clone https://github.com/0x-Shadow/carddeck.git
+cd carddeck
+npm ci
+npm run dev
+```
+
+Register this checkout's stdio server with your agent:
+
+```bash
+# OpenCode
+opencode mcp add --global carddeck -- "$PWD/apps/mcp/bin/carddeck-mcp"
+
+# Claude Code
+claude mcp add --scope user carddeck -- "$PWD/apps/mcp/bin/carddeck-mcp"
+
+# Codex
+codex mcp add carddeck -- "$PWD/apps/mcp/bin/carddeck-mcp"
+```
+
+For VS Code, opening this checkout registers the workspace server from
+`.vscode/mcp.json`. Other client setup, Docker instructions, and the full tool
+reference are in [docs/MCP.md](docs/MCP.md).
 
 Prerequisite: `npm install` once, and the stack running (`npm run dev`, or the
 Docker setup below) so generation jobs get worked off. Every client runs the
@@ -85,6 +114,13 @@ Then ask for a deck — the agent drives the tools itself:
 
 Tool reference, response shapes, and troubleshooting:
 [docs/MCP.md](docs/MCP.md).
+
+## Contributing
+
+Bug reports and focused pull requests are welcome. See
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for development and review expectations.
+Do not attach databases, exports, or private images to issues. Report suspected
+vulnerabilities privately using [`SECURITY.md`](SECURITY.md).
 
 ## Going live with a real model
 
@@ -202,8 +238,6 @@ npm run e2e      # 10 Playwright specs against a production build:
   Codex, …), the full tool reference, and self-hosting notes.
 - [`docs/SETUP.md`](docs/SETUP.md) — detailed setup, production notes,
   troubleshooting.
-- [`docs/superpowers/specs/`](docs/superpowers/specs/) — design spec and the
-  reverse-engineering findings this clean-room build is based on.
 
 ## Constraints
 

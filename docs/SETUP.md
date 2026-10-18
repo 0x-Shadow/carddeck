@@ -101,6 +101,11 @@ Clients exec:
 Setup per client, the full tool reference, and Docker notes:
 [`docs/MCP.md`](MCP.md).
 
+For a fresh clone, run `npm ci` before registering the MCP command. The stdio
+server inherits `DATA_DIR`; point it at the same directory as the web app and
+worker if you configure a custom location. Keep `.env`, the database, and
+exported decks local; none belong in an issue or pull request.
+
 ## PDF export
 
 PDF printing runs headless Chromium through Playwright. One-time:
@@ -115,7 +120,7 @@ hint — PPTX/POTX export and the rest of the app are unaffected.
 ## Testing
 
 ```bash
-npm test          # Vitest across core · ai · pptx · worker · mcp · web (286 tests)
+npm test          # Vitest across core · ai · pptx · worker · mcp · web
 npm run e2e       # Playwright, 10 specs, production build on :3000
 ```
 
@@ -144,11 +149,5 @@ Debug a failure with `npx playwright show-trace test-results/<test>/trace.zip`
 
 ## Repository layout
 
-See the [README](../README.md#architecture) for the full tree. Design context:
-
-- `docs/superpowers/specs/2026-10-16-gamma-reverse-engineering-findings.md` —
-  how the reference product behaves (clean-room findings).
-- `docs/superpowers/specs/2026-10-16-gamma-clone-design.md` — Carddeck's own
-  design (PPTX-first architecture).
-- `docs/superpowers/plans/2026-10-16-carddeck-implementation.md` — the 16-task
-  implementation plan this build executed.
+See the [README](../README.md#architecture) for the full tree. Internal design
+and implementation notes are not part of the public repository.

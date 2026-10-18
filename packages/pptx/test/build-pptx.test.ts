@@ -49,6 +49,21 @@ describe("buildPptxBuffer", () => {
     expect(buf.subarray(0, 2).toString("latin1")).toBe("PK");
   });
 
+  it("converts only body content and carries the slide background into PPTX", async () => {
+    const html =
+      '<html><head><style>body{padding:48px 56px}</style></head>' +
+      '<body><h1>Visible heading</h1></body></html>';
+    const buf = await buildPptxBuffer([
+      { html, backgroundColor: "101B3A" },
+    ]);
+    const JSZip = (await import("jszip")).default;
+    const zip = await JSZip.loadAsync(buf);
+    const xml = await zip.file("ppt/slides/slide1.xml")!.async("string");
+    expect(xml).toContain("Visible heading");
+    expect(xml).not.toContain("padding:48px");
+    expect(xml).toContain('<a:srgbClr val="101B3A"/>');
+  });
+
   it("handles an empty slide list without throwing", async () => {
     const buf = await buildPptxBuffer([], fakeConverter);
     expect(buf.subarray(0, 2).toString("latin1")).toBe("PK");

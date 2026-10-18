@@ -247,6 +247,36 @@ describe("carddeck MCP server", () => {
     expect(readdirSync(path.join(dataDir, "assets", deckId))).toHaveLength(1);
   });
 
+  it("caps a chunked remote image that lies about its size", async () => {
+    const client = await connect();
+    const created = await call(client, "create_deck_from_cards", {
+      title: "Flood",
+      cards: [{ title: "A" }],
+    });
+    const deckId = created.body.deckId as string;
+
+    // No Content-Length (chunked) and an endless body: the cap must cut the
+    // read off mid-stream instead of buffering it.
+    const chunk = new Uint8Array(1024 * 1024);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(
+        new ReadableStream<Uint8Array>({
+          pull(controller) {
+            controller.enqueue(chunk);
+          },
+        }),
+        { status: 200, headers: { "content-type": "image/png" } },
+      )),
+    );
+    const added = await call(client, "add_image", {
+      deckId,
+      source: { url: "https://example.com/huge.png" },
+    });
+    expect(added.isError).toBe(true);
+    expect(String(added.body.error)).toContain("image too large");
+  });
+
   it("appends cards to an existing deck", async () => {
     const client = await connect();
     const created = await call(client, "create_deck_from_cards", {

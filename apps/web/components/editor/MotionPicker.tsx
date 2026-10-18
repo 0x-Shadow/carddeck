@@ -29,6 +29,11 @@ interface MotionPickerProps {
  * Keyboard behavior follows the ARIA radiogroup pattern: arrows move
  * selection with focus, Home/End jump to the ends, and only the checked
  * radio sits in the tab order.
+ *
+ * While a PATCH is in flight the radios use `aria-disabled` (with the same
+ * dimmed style), never the native `disabled` attribute: a disabled element
+ * loses focus, which would kill arrow-key traversal after the first step.
+ * `pick` and `onKeyDown` gate on `saving` instead.
  */
 export function MotionPicker({ deckId, preset, onChange }: MotionPickerProps) {
   const [saving, setSaving] = useState(false);
@@ -57,6 +62,7 @@ export function MotionPicker({ deckId, preset, onChange }: MotionPickerProps) {
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLButtonElement>, index: number) {
+    if (saving) return;
     const last = PRESETS.length - 1;
     let next: number | null = null;
     if (e.key === "ArrowRight" || e.key === "ArrowDown") next = index === last ? 0 : index + 1;
@@ -81,11 +87,13 @@ export function MotionPicker({ deckId, preset, onChange }: MotionPickerProps) {
           role="radio"
           aria-checked={preset === p.value}
           aria-label={`Motion: ${p.label}`}
-          disabled={saving}
+          aria-disabled={saving}
           tabIndex={preset === p.value ? 0 : -1}
           onClick={() => pick(p.value)}
           onKeyDown={(e) => onKeyDown(e, i)}
-          className={preset === p.value ? "btn-secondary motion-option-active" : "btn-secondary"}
+          className={`btn-secondary${preset === p.value ? " motion-option-active" : ""}${
+            saving ? " opacity-50 cursor-default" : ""
+          }`}
         >
           {p.label}
         </button>

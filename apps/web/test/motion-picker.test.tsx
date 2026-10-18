@@ -94,4 +94,33 @@ describe("MotionPicker", () => {
     expect(onChange).toHaveBeenCalledWith("none");
     expect(document.activeElement).toBe(screen.getByRole("radio", { name: /none/i }));
   });
+
+  it("keeps the radios focusable while a save is in flight", async () => {
+    let release!: () => void;
+    fetchMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve({ ok: true, status: 200, json: async () => ({}) });
+        }),
+    );
+    const onChange = vi.fn();
+    render(<MotionPicker deckId="d1" preset="none" onChange={onChange} />);
+
+    const none = screen.getByRole("radio", { name: /none/i });
+    none.focus();
+    fireEvent.keyDown(none, { key: "ArrowRight" });
+
+    // A native `disabled` would blur the focused radio here — arrow-key
+    // traversal would die after one step. aria-disabled keeps it focusable.
+    const subtle = screen.getByRole("radio", { name: /subtle/i });
+    expect((subtle as HTMLButtonElement).disabled).toBe(false);
+    expect(subtle.getAttribute("aria-disabled")).toBe("true");
+    expect(document.activeElement).toBe(subtle);
+
+    // Once the save settles, the next key works normally.
+    release();
+    await waitFor(() => expect(subtle.getAttribute("aria-disabled")).toBe("false"));
+    fireEvent.keyDown(subtle, { key: "ArrowRight" });
+    expect(onChange).toHaveBeenCalledWith("punchy");
+  });
 });

@@ -19,10 +19,16 @@ stdio server is exactly as trusted as the worker process.
 ## Prerequisites
 
 ```bash
-cd /path/to/gamma-clone
-npm install
+git clone https://github.com/0x-Shadow/carddeck.git
+cd carddeck
+npm ci
 npm run dev            # web + worker — create_deck needs the worker running
 ```
+
+The MCP server runs locally as your operating-system user and shares the
+checkout's `DATA_DIR`. It can read local image paths you provide and write
+generated exports; only connect agents you trust. Keep personal databases,
+uploads, exports, and `.env` files in the ignored local data/config paths.
 
 PDF export additionally needs a one-time Chromium install:
 
@@ -44,7 +50,8 @@ matter where the agent itself was launched.
 /path/to/gamma-clone/apps/mcp/bin/carddeck-mcp
 ```
 
-Replace `/path/to/gamma-clone` with the absolute path of your checkout.
+Replace `/path/to/gamma-clone` with the absolute path of your checkout (for
+example, the cloned `carddeck` directory).
 If your client cannot exec a script directly, use `npx` with the source file
 and `cwd` set to the repo root: command `npx`, args
 `["tsx", "apps/mcp/src/index.ts"]`.
@@ -129,7 +136,9 @@ use the same shape:
 
 ### VS Code (GitHub Copilot)
 
-`.vscode/mcp.json` (note the `servers` key):
+This repository includes `.vscode/mcp.json`, so opening the workspace in VS Code
+registers Carddeck with Copilot automatically. For another checkout, add this
+to `.vscode/mcp.json` (note the `servers` key):
 
 ```json
 {
@@ -176,9 +185,13 @@ Notes:
   itself cannot log a browser in). Unguessable 16-hex-char slug.
 - `motion` matters most for PowerPoint: `.pptx` exports carry real entrance
   animations and transitions (subtle fades, punchy pushes/wipes, cinematic
-  covers with slower timing). Set `CARDDECK_MOTION=off` to strip them.
+  covers with slower timing). Embedded pictures get a staggered zoom entrance;
+  slides remain click-advance. This is 2.5D picture motion, not an interactive
+  PowerPoint 3D model. Set `CARDDECK_MOTION=off` to strip animations.
 - Charts in `.pptx` exports render as readable data summaries; images embed as
-  real pictures.
+  real pictures. GIFs display as animated images in web readers where the
+  browser supports animation; PowerPoint compatibility varies by viewer and
+  some viewers may show only the first frame.
 - Relative `source.path` values resolve from the repo root (the wrapper pins
   the working directory); absolute paths are clearer.
 

@@ -90,57 +90,45 @@ describe("createImageResolver", () => {
   });
 
   it("fetches remote http(s) images into data URLs", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => ({
-        ok: true,
-        headers: { get: (h: string) => (h === "content-type" ? "image/png" : null) },
-        arrayBuffer: async () => PNG.buffer.slice(PNG.byteOffset, PNG.byteOffset + PNG.byteLength),
-      })),
-    );
     const user = await seedUser();
     const themeId = await seedTheme();
     const deckId = await seedDeck(user.id, themeId);
 
-    const got = await createImageResolver(deckId)("https://example.com/pic.png");
+    const remote = vi.fn(async () => ({
+      dataUrl: `data:image/png;base64,${PNG.toString("base64")}`,
+      mime: "image/png",
+    }));
+    const got = await createImageResolver(deckId, remote, async () => "93.184.216.34")(
+      "https://example.com/pic.png",
+    );
     expect(got?.dataUrl).toMatch(/^data:image\/png;base64,/);
+    expect(remote).toHaveBeenCalledWith("https://example.com/pic.png", "93.184.216.34");
   });
 
   it("rejects non-image content types, oversize bodies, and failed fetches", async () => {
     const user = await seedUser();
     const themeId = await seedTheme();
     const deckId = await seedDeck(user.id, themeId);
-    const resolve = createImageResolver(deckId);
+    const remote = vi.fn(async () => null);
+    const resolve = createImageResolver(deckId, remote, async () => "93.184.216.34");
 
-    // text/html pretending to be a URL.
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => ({
-        ok: true,
-        headers: { get: () => "text/html" },
-        arrayBuffer: async () => new ArrayBuffer(8),
-      })),
-    );
     expect(await resolve("https://evil.example/x")).toBeNull();
-
-    // Oversize body (over the 10MB asset cap).
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => ({
-        ok: true,
-        headers: { get: () => "image/png" },
-        arrayBuffer: async () => new ArrayBuffer(11 * 1024 * 1024),
-      })),
-    );
     expect(await resolve("https://big.example/x.png")).toBeNull();
-
-    // Network failure.
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => {
-        throw new Error("boom");
-      }),
-    );
     expect(await resolve("https://down.example/x.png")).toBeNull();
+    expect(remote).toHaveBeenCalledTimes(3);
+  });
+
+  it("refuses loopback URLs before making any network request", async () => {
+    const user = await seedUser();
+    const themeId = await seedTheme();
+    const deckId = await seedDeck(user.id, themeId);
+    const remote = vi.fn(async () => ({ dataUrl: "data:image/png;base64,AA==" }));
+    const validateAddress = vi.fn(async () => null);
+    const resolve = createImageResolver(deckId, remote, validateAddress);
+
+    expect(await resolve("http://127.0.0.1:8080/internal.png")).toBeNull();
+    expect(await resolve("http://169.254.169.254/latest/meta-data/")).toBeNull();
+    expect(validateAddress).toHaveBeenCalledTimes(2);
+    expect(remote).not.toHaveBeenCalled();
   });
 });

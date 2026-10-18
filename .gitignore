@@ -2,7 +2,15 @@ node_modules/
 dist/
 data/
 *.log
+*.sqlite
+*.sqlite-*
+*.db
+*.pptx
+*.potx
+*.pdf
 .env
+.env.*
+!.env.example
 
 # Build artifacts
 .next/
@@ -16,3 +24,8 @@ playwright-report/
 
 # Local planning/notes
 .superpowers/
+docs/superpowers/
+
+# Local editor and coverage output
+.vscode/*.local.json
+coverage/

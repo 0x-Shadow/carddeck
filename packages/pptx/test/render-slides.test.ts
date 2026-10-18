@@ -92,6 +92,7 @@ describe("renderSlidesHtml", () => {
     expect(slides).toHaveLength(2);
     expect(slides[0].title).toBe("First");
     expect(slides[0].html).toContain("First");
+    expect(slides[0].backgroundColor).toBe(theme.colors.surface.replace("#", ""));
     expect(slides[1].title).toBe("Second");
     expect(slides[1].html).toContain("Second");
   });

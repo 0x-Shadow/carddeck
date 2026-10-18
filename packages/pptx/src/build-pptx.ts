@@ -45,6 +45,11 @@ export interface PptxTextItem {
 /** HTML → text items. Defaults to the real html2pptx converter. */
 export type HtmlConverter = (html: string) => PptxTextItem[];
 
+function bodyContent(html: string): string {
+  const match = /<body\b[^>]*>([\s\S]*?)<\/body>/i.exec(html);
+  return match?.[1] ?? html.replace(/<head\b[^>]*>[\s\S]*?<\/head>/i, "");
+}
+
 /** Options for [`buildPptxBuffer`]. */
 export interface BuildPptxOptions {
   /** Override the HTML → text converter (defaults to html2pptx). */
@@ -73,8 +78,10 @@ const SLIDE_H = 7.5;
 const MARGIN = 0.5;
 
 /**
- * Where an image sits on the slide, per layout hint. `sizing: contain`
- * preserves the picture's aspect ratio inside the box instead of stretching.
+ * Where an image sits on the slide, per layout hint. The picture fills the
+ * box rect: `sizing`'s reference box equals the target box, so there is no
+ * crop and the source aspect ratio is not consulted — aspect-fit would need
+ * natural dimensions at resolve time (a v3 candidate).
  */
 function imageRect(layout: ImageLayout): {
   x: number;
@@ -133,7 +140,7 @@ async function embedImage(
 }
 
 const defaultConverter: HtmlConverter = (html) =>
-  htmlToPptxText(html) as unknown as PptxTextItem[];
+  htmlToPptxText(bodyContent(html)) as unknown as PptxTextItem[];
 
 /**
  * Split converted text items into `parts` contiguous shapes.
@@ -172,7 +179,7 @@ export function groupTextItems(items: PptxTextItem[], parts: number): PptxTextIt
  *   a bare function is still accepted as a converter for backward compat
  */
 export async function buildPptxBuffer(
-  slides: { html: string }[],
+  slides: { html: string; backgroundColor?: string }[],
   options: BuildPptxOptions | HtmlConverter = {},
 ): Promise<Buffer> {
   // Accept a bare function as the converter so existing callers keep working.
@@ -197,6 +204,8 @@ export async function buildPptxBuffer(
   for (const [index, { html }] of slides.entries()) {
     const items = convert(html);
     const slide = pres.addSlide();
+    const backgroundColor = slides[index].backgroundColor;
+    if (backgroundColor) slide.background = { color: backgroundColor.replace("#", "") };
 
     // Pictures first: PowerPoint stacks shapes in creation order, and a
     // `behind` image must read as a background under the text. Embeds are
@@ -218,17 +227,22 @@ export async function buildPptxBuffer(
     const planned = opts.motion?.slides[index]?.builds.length ?? 0;
     const parts = Math.max(1, Math.min(planned, items.length, MAX_MOTION_BUILDS));
     const groups = groupTextItems(items, parts);
+    const hasSideImage = (images[index] ?? []).some((image) => image.layout === "side");
+    const textWidth = hasSideImage ? 7.4 : SLIDE_W - MARGIN * 2;
 
     // With motion, groups stack down the slide so each is a distinct,
     // separately-animatable box; without motion they share the old full-bleed
     // box, keeping the pre-motion layout byte-for-byte.
-    const rowH = (SLIDE_H - MARGIN * 2) / groups.length;
+    const availableHeight = SLIDE_H - MARGIN * 2;
+    const rowH = planned > 0
+      ? Math.min(1.18, availableHeight / groups.length)
+      : availableHeight;
 
     for (const [groupIndex, group] of groups.entries()) {
       slide.addText(group as never, {
         x: MARGIN,
         y: MARGIN + rowH * groupIndex,
-        w: SLIDE_W - MARGIN * 2,
+        w: textWidth,
         h: rowH,
         valign: "top",
         fontFace: "Arial",

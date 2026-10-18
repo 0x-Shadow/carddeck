@@ -1,9 +1,13 @@
 // Relative imports, not the `@/` alias: the worker and MCP server reach this
 // module from other workspaces (see their relative-import convention).
+import { lookup } from "node:dns/promises";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
+import { isIP } from "node:net";
 import { getDb } from "./db";
 import * as t from "../drizzle/schema";
 import { rowToTheme } from "./themes-presets";
-import { readAssetDataUrl, MAX_ASSET_BYTES } from "./assets";
+import { readAssetDataUrl, MAX_ASSET_BYTES, sniffImageMime } from "./assets";
 import { PRESET_THEMES, parseMotionPlan, type Block, type MotionPlan, type Theme } from "@carddeck/core";
 import type { SlideInput, ImageResolver, ResolvedImage } from "@carddeck/pptx";
 
@@ -73,21 +77,114 @@ function parseBlocks(raw: string): Block[] {
 
 /** Only these schemes are ever fetched; everything else (file:, data:, …) is refused. */
 const REMOTE_IMAGE_TIMEOUT_MS = 5000;
-const IMAGE_MIME_RE = /^image\/[a-z0-9.+-]+$/i;
+const MAX_REDIRECTS = 3;
 
-/** Fetch a remote image into a data URL, with SSRF/size/time limits. */
-function fetchRemoteImage(src: string): Promise<ResolvedImage | null> {
+function isPublicIpv4(address: string): boolean {
+  if (isIP(address) !== 4) return false;
+  const [a, b, c] = address.split(".").map(Number);
+  return !(
+    a === 0 || a === 10 || a === 127 || a >= 224 ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && (b === 0 || b === 168)) ||
+    (a === 192 && b === 0 && c === 2) ||
+    (a === 198 && (b === 18 || b === 19 || (b === 51 && c === 100))) ||
+    (a === 203 && b === 0 && c === 113)
+  );
+}
+
+async function publicAddressFor(url: URL): Promise<string | null> {
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+  const defaultPort = url.protocol === "https:" ? "443" : "80";
+  if (url.port && url.port !== defaultPort) return null;
+  if (url.username || url.password) return null;
+
+  const host = url.hostname.replace(/^\[|\]$/g, "");
+  if (isIP(host)) return isPublicIpv4(host) ? host : null;
+  if (!host || host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) {
+    return null;
+  }
+  const addresses = await lookup(host, { all: true, verbatim: true }).catch(() => []);
+  const ipv4 = addresses.filter((entry) => entry.family === 4);
+  if (!ipv4.length || ipv4.some((entry) => !isPublicIpv4(entry.address))) return null;
+  return ipv4[0].address;
+}
+
+/** Fetch remote image bytes only after validating and pinning a public IPv4. */
+function fetchRemoteImage(src: string, address: string): Promise<ResolvedImage | null> {
   return (async () => {
-    const res = await fetch(src, {
-      signal: AbortSignal.timeout(REMOTE_IMAGE_TIMEOUT_MS),
-      redirect: "follow",
-    });
-    if (!res.ok) return null;
-    const mime = (res.headers.get("content-type") ?? "").split(";")[0].trim();
-    if (!IMAGE_MIME_RE.test(mime)) return null;
-    const bytes = Buffer.from(await res.arrayBuffer());
-    if (bytes.byteLength > MAX_ASSET_BYTES) return null;
-    return { dataUrl: `data:${mime};base64,${bytes.toString("base64")}`, mime };
+    const deadline = Date.now() + REMOTE_IMAGE_TIMEOUT_MS;
+    const fetchAt = async (
+      url: URL,
+      pinnedAddress: string,
+      redirects: number,
+    ): Promise<ResolvedImage | null> => {
+      if (Date.now() >= deadline) return null;
+      const transport = url.protocol === "https:" ? httpsRequest : httpRequest;
+      return new Promise((resolve) => {
+        const req = transport({
+          protocol: url.protocol,
+          hostname: url.hostname,
+          port: url.port || undefined,
+          path: `${url.pathname}${url.search}`,
+          method: "GET",
+          headers: { accept: "image/png,image/jpeg,image/webp,image/gif" },
+          agent: false,
+          servername: isIP(url.hostname) ? undefined : url.hostname,
+          lookup: (_hostname, _options, callback) => callback(null, pinnedAddress, 4),
+        }, (res) => {
+          const status = res.statusCode ?? 0;
+          const location = res.headers.location;
+          if (status >= 300 && status < 400 && location && redirects < MAX_REDIRECTS) {
+            res.resume();
+            const nextUrl = new URL(location, url);
+            void publicAddressFor(nextUrl)
+              .then((nextAddress) => nextAddress
+                ? fetchAt(nextUrl, nextAddress, redirects + 1)
+                : null)
+              .then(resolve, () => resolve(null));
+            return;
+          }
+          if (status < 200 || status >= 300) {
+            res.resume();
+            resolve(null);
+            return;
+          }
+          const declared = Number(res.headers["content-length"] ?? 0);
+          if (Number.isFinite(declared) && declared > MAX_ASSET_BYTES) {
+            res.destroy();
+            resolve(null);
+            return;
+          }
+          const parts: Buffer[] = [];
+          let total = 0;
+          res.on("data", (part: Buffer) => {
+            total += part.byteLength;
+            if (total > MAX_ASSET_BYTES) {
+              res.destroy(new Error("image too large"));
+              return;
+            }
+            parts.push(part);
+          });
+          res.on("end", () => {
+            const bytes = Buffer.concat(parts, total);
+            const mime = sniffImageMime(bytes);
+            if (!mime) {
+              resolve(null);
+              return;
+            }
+            resolve({ dataUrl: `data:${mime};base64,${bytes.toString("base64")}`, mime });
+          });
+          res.on("error", () => resolve(null));
+        });
+        const remaining = Math.max(1, deadline - Date.now());
+        req.setTimeout(remaining, () => req.destroy(new Error("image request timed out")));
+        req.on("error", () => resolve(null));
+        req.end();
+      });
+    };
+    return await fetchAt(new URL(src), address, 0);
   })().catch(() => null);
 }
 
@@ -96,14 +193,19 @@ function fetchRemoteImage(src: string): Promise<ResolvedImage | null> {
  *
  * - Local assets (`/api/deck/<deckId>/assets/<assetId>`) are read from disk —
  *   cross-deck ids resolve to null.
- * - http(s) URLs are fetched once, capped at 5 s / 10 MB / `image/*`.
+ * - http(s) URLs are fetched once, pinned to a validated public IPv4, capped
+ *   at 5 s / 10 MB, and redirects are revalidated.
  * - Every other scheme (`file:`, `data:`, `javascript:`, …) returns null
  *   without a network call.
  *
  * Null flows into the exporters' captioned-placeholder fallback, so an
  * export never fails because of one bad image.
  */
-export function createImageResolver(deckId: string): ImageResolver {
+export function createImageResolver(
+  deckId: string,
+  fetchRemote: (src: string, address: string) => Promise<ResolvedImage | null> = fetchRemoteImage,
+  resolvePublicAddress: (url: URL) => Promise<string | null> = publicAddressFor,
+): ImageResolver {
   return async (src: string): Promise<ResolvedImage | null> => {
     const local = /^\/api\/deck\/([^/]+)\/assets\/([A-Za-z0-9-]+)$/.exec(src);
     if (local) {
@@ -113,7 +215,12 @@ export function createImageResolver(deckId: string): ImageResolver {
       const mime = dataUrl.slice(5, dataUrl.indexOf(";"));
       return { dataUrl, mime };
     }
-    if (/^https?:\/\//i.test(src)) return fetchRemoteImage(src);
+    if (/^https?:\/\//i.test(src)) {
+      const url = new URL(src);
+      const address = await resolvePublicAddress(url).catch(() => null);
+      if (!address) return null;
+      return fetchRemote(src, address);
+    }
     return null;
   };
 }

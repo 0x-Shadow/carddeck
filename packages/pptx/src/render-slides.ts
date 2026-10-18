@@ -177,6 +177,7 @@ export interface SlideInput {
 export interface SlideHtml {
   title: string;
   html: string;
+  backgroundColor: string;
 }
 
 /** The deck context a slide is rendered for: its title and active theme. */
@@ -241,7 +242,11 @@ export async function renderSlidesHtml(
     opts.imageMode === "omit" ? { omitImages: true } : {};
   const out: SlideHtml[] = [];
   for (const card of cards) {
-    out.push({ title: card.title, html: await renderSlideHtml(deck, card, bodyOpts) });
+    out.push({
+      title: card.title,
+      html: await renderSlideHtml(deck, card, bodyOpts),
+      backgroundColor: hex(deck.theme.colors.surface),
+    });
   }
   return out;
 }

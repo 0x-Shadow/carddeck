@@ -13,15 +13,13 @@ import { createServer } from "../src/tools";
  * actionable hint the web route gives — instead of leaking a raw module or
  * launch error.
  *
- * `playwright` is mocked for the whole file: nothing here needs a real
- * browser, and the suite stays runnable on machines without one.
+ * The `playwright` mock factory throws, which makes `await import("playwright")`
+ * itself reject: exactly the shape of "package not installed at all", the case
+ * the import-inside-try fix exists for. Nothing here needs a real browser.
  */
-vi.mock("playwright", () => ({
-  chromium: {
-    launch: () =>
-      Promise.reject(new Error("Executable doesn't exist at /ms-playwright/chromium-1234")),
-  },
-}));
+vi.mock("playwright", () => {
+  throw new Error("Cannot find package 'playwright'");
+});
 
 interface Envelope {
   ok: boolean;

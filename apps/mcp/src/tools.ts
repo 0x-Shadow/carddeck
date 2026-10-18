@@ -188,6 +188,42 @@ function mimeFromExtension(filePath: string): string | null {
   return null;
 }
 
+/**
+ * Drain a fetch body with a hard byte cap. Returns `null` when the cap trips;
+ * a declared Content-Length is only a hint — chunked or lying servers get cut
+ * off here, mid-stream, exactly like the web upload route caps its request.
+ */
+async function readCappedBody(
+  body: ReadableStream<Uint8Array> | null,
+  cap: number,
+): Promise<Uint8Array | null> {
+  if (!body) return new Uint8Array(0);
+  const reader = body.getReader();
+  const parts: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > cap) {
+        await reader.cancel().catch(() => {});
+        return null;
+      }
+      parts.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.byteLength;
+  }
+  return out;
+}
+
 // ── schemas ─────────────────────────────────────────────────────────────────
 
 const cardInput = z.object({
@@ -633,19 +669,24 @@ export async function createServer(opts: ServerOptions = {}): Promise<McpServer>
           throw new Error(`could not download image: ${url}`);
         });
         if (!res.ok) throw new Error(`could not download image (HTTP ${res.status})`);
-        // Cheap guard before buffering: a declared oversized body is refused
+        // Cheap guard before reading: a declared oversized body is refused
         // without ever downloading it.
         const declared = Number(res.headers.get("content-length") ?? "0");
         if (Number.isFinite(declared) && declared > MAX_ASSET_BYTES) {
           throw new Error("image too large (max 10MB)");
         }
         const header = (res.headers.get("content-type") ?? "").split(";")[0].trim();
-        if (!isAcceptedImageMime(header)) {
+        // The declaration is a hint at best — the cap does the real work.
+        const capped = await readCappedBody(res.body, MAX_ASSET_BYTES);
+        if (!capped) throw new Error("image too large (max 10MB)");
+        bytes = capped;
+        // Bytes are the truth: what they sniff as is what gets stored (same
+        // contract as the web upload route).
+        const inferred = sniffImageMime(bytes);
+        if (!inferred) {
           throw new Error(`unsupported image type: ${header || "unknown"}`);
         }
-        bytes = new Uint8Array(await res.arrayBuffer());
-        if (bytes.byteLength > MAX_ASSET_BYTES) throw new Error("image too large (max 10MB)");
-        mime = header;
+        mime = inferred;
         originalName = path.basename(new URL(url).pathname) || undefined;
       } else {
         const resolved = path.resolve(args.source.path);

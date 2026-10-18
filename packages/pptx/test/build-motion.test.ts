@@ -84,11 +84,11 @@ describe("buildPptxBuffer motion injection", () => {
     expect(s1).toContain('delay="200"');
   });
 
-  it("targets text shapes, not images, when a slide has both", async () => {
+  it("animates text first, then gives embedded images a zoom entrance", async () => {
     // pptxgenjs numbers all slide objects off one shared counter in add order,
     // and the exporter adds images before text. So a slide with an image block
     // writes <p:pic id=2> then <p:sp id=3>… — a build must never land on the
-    // picture.
+    // picture. Picture animations are appended after the text builds.
     const withImage: MotionPlan = {
       preset: "punchy",
       slides: [
@@ -115,10 +115,14 @@ describe("buildPptxBuffer motion injection", () => {
     const picIds = [...s1.matchAll(/<p:pic>[\s\S]*?<p:cNvPr[^>]*\sid="(\d+)"/g)].map(
       (m) => m[1],
     );
-    const targets = [...s1.matchAll(/<p:spTgt[^>]*\sspid="(\d+)"/g)].map((m) => m[1]);
+    const targets = [...new Set(
+      [...s1.matchAll(/<p:spTgt[^>]*\sspid="(\d+)"/g)].map((m) => m[1]),
+    )];
     expect(targets.length).toBeGreaterThan(0);
-    // Every animation target is a text shape, never the picture.
-    expect(targets.some((id) => picIds.includes(id))).toBe(false);
+    expect(targets.slice(0, 2).some((id) => picIds.includes(id))).toBe(false);
+    expect(targets.slice(0, 2)).toEqual(expect.arrayContaining(["3", "4"]));
+    expect(targets.slice(2)).toEqual(picIds);
+    expect(s1).toContain('presetID="23"');
   });
 
   it("never animates more shapes than the slide has", async () => {
