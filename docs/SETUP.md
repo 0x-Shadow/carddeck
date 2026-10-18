@@ -4,7 +4,7 @@ Everything you need to run Carddeck locally, in production, and in CI.
 
 ## Prerequisites
 
-- **Node.js 20+** (Next.js 15 requires ≥ 18.18; 20 LTS is tested)
+- **Node.js 22+** (Next.js 15 requires ≥ 18.18; `better-sqlite3` 13 requires ≥ 22)
 - **npm 10+** (the repo pins `packageManager: npm@10.0.0`)
 - A C toolchain for `better-sqlite3` (prebuilt binaries are normally used; if
   npm has to compile, `build-essential` / Xcode CLT must be present)

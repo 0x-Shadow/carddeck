@@ -5,7 +5,7 @@ problem they solve.
 
 ## Development
 
-Requirements: Node.js 20 or newer and npm 10 or newer.
+Requirements: Node.js 22 or newer and npm 10 or newer.
 
 ```bash
 npm ci
