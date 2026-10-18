@@ -55,6 +55,8 @@ cp .env.example .env
 | `SESSION_SECRET` | Session-cookie HMAC key. **Production refuses the dev default** — use ≥32 random characters (`openssl rand -hex 32`). |
 | `DATA_DIR` | Where SQLite and artifacts live. Relative paths anchor to the repo root. |
 | `WORKER_POLL_MS` | Queue polling interval (default 500). |
+| `CARDDECK_MCP_USER` | Owner account for decks created over MCP (default `mcp@carddeck.local`; auto-provisioned). |
+| `CARDDECK_MOTION` | `off` strips animation injection from .pptx/.potx exports. |
 | `CARDDECK_E2E_HOOKS` | Internal: `1` arms the stub's `[fail]` test hook. Do not set in normal use. |
 
 `.env` is loaded by Next.js for the web app; when running the worker by hand,
@@ -65,7 +67,7 @@ export the same variables (turbo's `dev` inherits your shell).
 ```bash
 export SESSION_SECRET="$(openssl rand -hex 32)"   # mandatory
 npm run build
-npm run start          # turbo: next start + worker
+npm run start          # turbo: next start (0.0.0.0:3000) + worker
 ```
 
 - Web serves the built app on port 3000 (`next start`).
@@ -73,6 +75,31 @@ npm run start          # turbo: next start + worker
   access (the worker is the only writer of job/card rows).
 - Scale-out note: the queue is a single SQLite file, so run **one** worker
   process per `DATA_DIR`. Web instances are stateless.
+
+## Docker (self-hosting)
+
+```bash
+echo "CARDDECK_SESSION_SECRET=$(openssl rand -hex 32)" > .env
+docker compose up -d --build
+```
+
+One container runs web + worker with Chromium preinstalled (`DATA_DIR=/data`
+in the `carddeck-data` volume); optional `OPENAI_*` vars pass through from the
+compose `.env`. Full walkthrough: [`docs/MCP.md`](MCP.md#self-hosting).
+
+## MCP server (agents)
+
+`apps/mcp` is a stdio MCP server that lets agents (OpenCode, Claude Code,
+Codex, …) build decks, add images, set motion, and export files. It shares
+this app's `DATA_DIR`, so the worker must be running for `create_deck`.
+Clients exec:
+
+```text
+/path/to/gamma-clone/apps/mcp/bin/carddeck-mcp
+```
+
+Setup per client, the full tool reference, and Docker notes:
+[`docs/MCP.md`](MCP.md).
 
 ## PDF export
 
@@ -88,7 +115,7 @@ hint — PPTX/POTX export and the rest of the app are unaffected.
 ## Testing
 
 ```bash
-npm test          # Vitest across core · ai · pptx · worker · web (152 tests)
+npm test          # Vitest across core · ai · pptx · worker · mcp · web (277 tests)
 npm run e2e       # Playwright, 8 specs, production build on :3000
 ```
 
