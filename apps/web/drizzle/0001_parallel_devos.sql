@@ -1,0 +1,1 @@
+ALTER TABLE `card` ADD `intent` text DEFAULT 'body' NOT NULL;

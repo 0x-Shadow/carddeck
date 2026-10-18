@@ -1,0 +1,12 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "carddeck": {
+        "type": "local",
+        "command": ["npx", "tsx", "apps/mcp/src/index.ts"],
+        "cwd": "."
+      }
+    }
+  }
+}

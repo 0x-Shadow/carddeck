@@ -1,0 +1,8 @@
+{
+  "servers": {
+    "carddeck": {
+      "type": "stdio",
+      "command": "${workspaceFolder}/apps/mcp/bin/carddeck-mcp"
+    }
+  }
+}
