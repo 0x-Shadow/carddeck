@@ -4,6 +4,8 @@ import * as t from "@/drizzle/schema";
 import { eq, asc } from "drizzle-orm";
 import { resolveOwnedDeck } from "@/lib/deck-access";
 import { rowToTheme } from "@/lib/themes-presets";
+import { planMotionForDeck, type MotionPreset, type SlideMotion } from "@carddeck/core";
+import { validateMotionPlan } from "@carddeck/ai";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -36,7 +38,10 @@ export async function GET(_req: Request, { params }: Params) {
 /** Deck lifecycle states the API will accept (mirrors the stage machine). */
 const DECK_STATUSES = new Set(["draft", "outline", "generating", "ready", "error"]);
 
-/** PATCH /api/deck/[id] { title?, themeId?, status? } -> 200 { deck } */
+/** Motion presets the API will accept. */
+const MOTION_PRESETS = new Set(["none", "subtle", "punchy", "cinematic"]);
+
+/** PATCH /api/deck/[id] { title?, themeId?, status?, motionPreset? | motion? } -> 200 { deck } */
 export async function PATCH(req: Request, { params }: Params) {
   const { id } = await params;
   const owned = await resolveOwnedDeck(id);
@@ -46,6 +51,8 @@ export async function PATCH(req: Request, { params }: Params) {
     title?: string;
     themeId?: string;
     status?: string;
+    motionPreset?: unknown;
+    motion?: unknown;
   } | null;
 
   const db = getDb();
@@ -67,6 +74,43 @@ export async function PATCH(req: Request, { params }: Params) {
       return NextResponse.json({ error: "unknown status" }, { status: 400 });
     }
     patch.status = body.status;
+  }
+  if (body && "motionPreset" in body) {
+    const preset = body.motionPreset;
+    if (typeof preset !== "string" || !MOTION_PRESETS.has(preset)) {
+      return NextResponse.json({ error: "unknown motionPreset" }, { status: 400 });
+    }
+    // A finished deck should animate the moment a preset is picked: derive
+    // the full plan from its cards right here (deterministic — same deck, same
+    // plan). A deck still generating keeps an empty plan; the worker fills
+    // slides when its cards settle.
+    let slides: SlideMotion[] = [];
+    if (owned.deck.status === "ready") {
+      const cards = await db.query.card.findMany({
+        where: (c, { eq: eqCard }) => eqCard(c.deckId, id),
+        orderBy: (c, { asc: ascCard }) => ascCard(c.position),
+      });
+      slides = planMotionForDeck(
+        preset as MotionPreset,
+        cards.map((c) => ({ blocks: c.blocks })),
+        id,
+      ).slides;
+    }
+    patch.motion = JSON.stringify({ preset, slides });
+  } else if (body && "motion" in body) {
+    // Full plan (AI output, MCP power users): validated strictly against the
+    // deck's real card count.
+    const cards = await db.query.card.findMany({
+      where: (c, { eq: eqCard }) => eqCard(c.deckId, id),
+    });
+    try {
+      patch.motion = JSON.stringify(validateMotionPlan(body.motion, cards.length));
+    } catch (err) {
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "invalid motion plan" },
+        { status: 400 },
+      );
+    }
   }
 
   const [deck] = await db.update(t.deck).set(patch).where(eq(t.deck.id, id)).returning();

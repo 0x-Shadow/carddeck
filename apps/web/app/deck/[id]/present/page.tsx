@@ -3,12 +3,12 @@
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PresentStage } from "@/components/reader/PresentStage";
-import { PRESET_THEMES, type Theme } from "@carddeck/core";
+import { PRESET_THEMES, parseMotionPlan, type Theme } from "@carddeck/core";
 import { isAbortError } from "@/lib/abort";
 import Link from "next/link";
 
 interface PresentData {
-  deck: { id: string; title: string; themeId: string };
+  deck: { id: string; title: string; themeId: string; motion?: string | null };
   cards: Array<{ id: string; title: string; blocks: string; position: number; status: string }>;
   theme: Theme | null;
 }
@@ -90,6 +90,10 @@ export default function PresentPage({ params }: { params: Promise<{ id: string }
       deckTitle={data.deck.title}
       cards={presentable}
       theme={theme}
+      // Plans are indexed by all deck cards; `presentable` only drops
+      // non-ready ones, which only ever shifts which plan entry a slide
+      // picks — cosmetic at worst.
+      motion={parseMotionPlan(data.deck.motion)}
       onExit={() => router.push(`/deck/${id}`)}
     />
   );

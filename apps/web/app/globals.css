@@ -936,6 +936,80 @@ body {
   margin: 0;
 }
 
+/* ---- Present-mode motion (driven by the deck's motion plan) ---- */
+
+@keyframes motion-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes motion-wipe-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes motion-fly-left {
+  from {
+    opacity: 0;
+    transform: translateX(-28px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes motion-zoom-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.motion-fade {
+  animation: motion-fade-in 0.55s ease both;
+}
+
+.motion-wipeUp {
+  animation: motion-wipe-up 0.6s ease both;
+}
+
+.motion-flyLeft {
+  animation: motion-fly-left 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.motion-zoom {
+  animation: motion-zoom-in 0.6s ease both;
+}
+
+.motion-option-active {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-fade,
+  .motion-wipeUp,
+  .motion-flyLeft,
+  .motion-zoom {
+    animation: none !important;
+  }
+}
+
 /* ---- Charts ---- */
 
 .chart-legend {

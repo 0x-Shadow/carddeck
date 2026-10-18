@@ -1,4 +1,4 @@
-import type { Block, Theme } from "@carddeck/core";
+import type { Block, SlideMotion, Theme } from "@carddeck/core";
 import { BlockRenderer } from "@/components/blocks";
 import { deckCssVars } from "@/lib/theme-styles";
 
@@ -15,6 +15,12 @@ export interface ReaderCardProps {
   /** 1-based position for the slide number; omit to hide it. */
   index?: number;
   total?: number;
+  /**
+   * Entrance animation for this slide, from the deck's motion plan. Build 0
+   * animates the title; build i+1 animates block i — the same shape order
+   * the PPTX animation injector uses, so web and PowerPoint agree.
+   */
+  slideMotion?: SlideMotion | null;
 }
 
 /** Decode a card's blocks JSON, tolerating null/partial/corrupt rows. */
@@ -33,8 +39,9 @@ function parseBlocks(raw: string): Block[] {
  * full-screen present mode, so both always render exactly what the editor
  * shows — the same `BlockRenderer` the editable canvas uses.
  */
-export function ReaderCard({ card, theme, index, total }: ReaderCardProps) {
+export function ReaderCard({ card, theme, index, total, slideMotion }: ReaderCardProps) {
   const blocks = parseBlocks(card.blocks);
+  const titleBuild = slideMotion?.builds[0];
   return (
     <section
       className="reader-card"
@@ -42,7 +49,14 @@ export function ReaderCard({ card, theme, index, total }: ReaderCardProps) {
       aria-label={card.title}
     >
       <div className="reader-card-head">
-        <h2 className="reader-card-title">{card.title}</h2>
+        <h2
+          className={
+            titleBuild ? `reader-card-title motion-${titleBuild.effect}` : "reader-card-title"
+          }
+          style={titleBuild ? { animationDelay: `${titleBuild.delayMs}ms` } : undefined}
+        >
+          {card.title}
+        </h2>
         {index !== undefined ? (
           <span className="reader-card-index">
             {index}
@@ -51,9 +65,21 @@ export function ReaderCard({ card, theme, index, total }: ReaderCardProps) {
         ) : null}
       </div>
       <div className="reader-card-body">
-        {blocks.map((block, i) => (
-          <BlockRenderer key={i} block={block} theme={theme ?? undefined} />
-        ))}
+        {blocks.map((block, i) => {
+          const build = slideMotion?.builds[i + 1];
+          if (!build) {
+            return <BlockRenderer key={i} block={block} theme={theme ?? undefined} />;
+          }
+          return (
+            <div
+              key={i}
+              className={`motion-${build.effect}`}
+              style={{ animationDelay: `${build.delayMs}ms` }}
+            >
+              <BlockRenderer block={block} theme={theme ?? undefined} />
+            </div>
+          );
+        })}
       </div>
     </section>
   );

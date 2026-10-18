@@ -9,6 +9,7 @@ import {
   readJson,
 } from "./helpers/route";
 import { getDb } from "@/lib/db";
+import { eq } from "drizzle-orm";
 import * as t from "@/drizzle/schema";
 
 // The handlers read cookies() at call time, so we import them dynamically after
@@ -255,5 +256,95 @@ describe("deck + card REST", () => {
     const good = await patch({ blocks: [{ type: "paragraph", text: ["ok"] }] });
     expect(good.status).toBe(200);
     expect(JSON.parse(good.body.card.blocks)).toEqual([{ type: "paragraph", text: ["ok"] }]);
+  });
+});
+
+describe("deck PATCH motion", () => {
+  async function seedReadyDeckWithCards() {
+    const user = await seedUser();
+    const themeId = await seedTheme();
+    const deckId = await seedDeck(user.id, themeId, "Motion");
+    useSession(user.id);
+    const db = getDb();
+    // NB: callback-form .where() is broken on update() in this drizzle
+    // version (it binds the callback object as a parameter) — always use
+    // direct eq(t.x.id, …) in updates.
+    await db.update(t.deck).set({ status: "ready" }).where(eq(t.deck.id, deckId));
+    await db.insert(t.card).values([
+      { deckId, position: 0, title: "One", blocks: JSON.stringify([{ type: "paragraph", text: ["a"] }]) },
+      { deckId, position: 1, title: "Two", blocks: "[]" },
+    ]);
+    return deckId;
+  }
+
+  async function patchMotion(deckId: string, body: unknown) {
+    const { PATCH } = await import("@/app/api/deck/[id]/route");
+    return readJson(
+      await PATCH(jsonRequest(`http://t/api/deck/${deckId}`, "PATCH", body), {
+        params: Promise.resolve({ id: deckId }),
+      }),
+    );
+  }
+
+  it("motionPreset derives a full plan on a ready deck", async () => {
+    const deckId = await seedReadyDeckWithCards();
+    const { status, body } = await patchMotion(deckId, { motionPreset: "punchy" });
+    expect(status).toBe(200);
+    const motion = JSON.parse(body.deck.motion);
+    expect(motion.preset).toBe("punchy");
+    // One plan slide per card, with builds derived from each card's blocks.
+    expect(motion.slides).toHaveLength(2);
+    expect(motion.slides[0].builds.length).toBeGreaterThan(0);
+  });
+
+  it("motionPreset stores preset-only on a non-ready deck (worker fills later)", async () => {
+    const user = await seedUser();
+    const themeId = await seedTheme();
+    const deckId = await seedDeck(user.id, themeId, "Draft");
+    useSession(user.id);
+    const { status, body } = await patchMotion(deckId, { motionPreset: "cinematic" });
+    expect(status).toBe(200);
+    const motion = JSON.parse(body.deck.motion);
+    expect(motion.preset).toBe("cinematic");
+    expect(motion.slides).toEqual([]);
+  });
+
+  it("rejects an unknown preset", async () => {
+    const user = await seedUser();
+    const themeId = await seedTheme();
+    const deckId = await seedDeck(user.id, themeId);
+    useSession(user.id);
+    const { status } = await patchMotion(deckId, { motionPreset: "hyperspace" });
+    expect(status).toBe(400);
+  });
+
+  it("accepts a full validated motion plan", async () => {
+    const deckId = await seedReadyDeckWithCards();
+    const plan = {
+      preset: "subtle",
+      slides: [
+        { transition: "fade", builds: [{ effect: "fade", delayMs: 0 }] },
+        { transition: "fade", builds: [{ effect: "fade", delayMs: 300 }] },
+      ],
+    };
+    const { status, body } = await patchMotion(deckId, { motion: plan });
+    expect(status).toBe(200);
+    expect(JSON.parse(body.deck.motion)).toEqual(plan);
+  });
+
+  it("rejects a full plan with unknown enums", async () => {
+    const deckId = await seedReadyDeckWithCards();
+    const { status } = await patchMotion(deckId, {
+      motion: { preset: "subtle", slides: [{ transition: "warp", builds: [] }] },
+    });
+    expect(status).toBe(400);
+  });
+
+  it("preserves title patching alongside motion", async () => {
+    const deckId = await seedReadyDeckWithCards();
+    const { status, body } = await patchMotion(deckId, { title: "Renamed", motionPreset: "none" });
+    expect(status).toBe(200);
+    expect(body.deck.title).toBe("Renamed");
+    expect(JSON.parse(body.deck.motion)).toEqual({ preset: "none", slides: [] });
   });
 });

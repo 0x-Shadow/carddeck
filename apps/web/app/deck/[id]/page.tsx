@@ -2,7 +2,13 @@
 
 import { use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { PRESET_THEMES, type Block, type Theme } from "@carddeck/core";
+import {
+  PRESET_THEMES,
+  parseMotionPlan,
+  type Block,
+  type MotionPreset,
+  type Theme,
+} from "@carddeck/core";
 import {
   CardCanvas,
   type CanvasCard,
@@ -10,16 +16,21 @@ import {
 } from "@/components/editor/CardCanvas";
 import { GenerationView } from "@/components/editor/GenerationView";
 import { ThemePicker } from "@/components/theme/ThemePicker";
+import { MotionPicker } from "@/components/editor/MotionPicker";
 import { ShareControl } from "@/components/share/ShareControl";
 import { ExportMenu } from "@/components/share/ExportMenu";
 
 interface DeckResponse {
-  deck: CanvasDeck & { shareSlug?: string | null; isPublic?: number };
+  deck: CanvasDeck & { shareSlug?: string | null; isPublic?: number; motion?: string | null };
   cards: CanvasCard[];
   theme?: Theme | null;
 }
 
-type DeckWithShare = CanvasDeck & { shareSlug?: string | null; isPublic?: number };
+type DeckWithShare = CanvasDeck & {
+  shareSlug?: string | null;
+  isPublic?: number;
+  motion?: string | null;
+};
 
 type PageState = "loading" | "ready" | "unauthorized" | "missing";
 type SaveState = "idle" | "saving" | "error";
@@ -52,6 +63,8 @@ export default function DeckPage({ params }: { params: Promise<{ id: string }> }
   const [actionError, setActionError] = useState<string | null>(null);
   // Card showing the AI refine panel (at most one).
   const [refiningCardId, setRefiningCardId] = useState<string | null>(null);
+  // Deck's motion preset (the server owns the full plan; this mirrors it).
+  const [motionPreset, setMotionPreset] = useState<MotionPreset>("none");
 
   // Debounce timers live in refs so re-renders (every keystroke) don't reset them.
   const titleTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
@@ -70,6 +83,7 @@ export default function DeckPage({ params }: { params: Promise<{ id: string }> }
     setDeck(body.deck);
     setCards(body.cards);
     setTheme(body.theme ?? null);
+    setMotionPreset(parseMotionPlan(body.deck.motion)?.preset ?? "none");
   }
 
   async function fetchDeck(): Promise<DeckResponse | null> {
@@ -275,6 +289,7 @@ export default function DeckPage({ params }: { params: Promise<{ id: string }> }
           />
           <ExportMenu deckId={id} deckTitle={deck!.title} />
           <ThemePicker deckId={id} themeId={deck!.themeId} onChange={changeTheme} />
+          <MotionPicker deckId={id} preset={motionPreset} onChange={setMotionPreset} />
         </div>
       </header>
 

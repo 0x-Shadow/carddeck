@@ -3,13 +3,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ReaderCard } from "./ReaderCard";
 import { ReaderChrome } from "./ReaderChrome";
-import type { Theme } from "@carddeck/core";
+import type { MotionPlan, Theme } from "@carddeck/core";
 import { deckCssVars } from "@/lib/theme-styles";
 
 export interface PresentStageProps {
   deckTitle: string;
   cards: Array<{ id: string; title: string; blocks: string }>;
   theme: Theme;
+  /** The deck's motion plan; each slide animates from its plan entry. */
+  motion?: MotionPlan | null;
   /** Called on Escape / Exit — the page owns the actual navigation. */
   onExit: () => void;
 }
@@ -26,7 +28,7 @@ export interface PresentStageProps {
  * Presentational: the page fetches the deck and passes plain props, so this
  * component stays free of data fetching and is directly unit-testable.
  */
-export function PresentStage({ deckTitle, cards, theme, onExit }: PresentStageProps) {
+export function PresentStage({ deckTitle, cards, theme, motion, onExit }: PresentStageProps) {
   const [index, setIndex] = useState(0);
   const indexRef = useRef(index);
   indexRef.current = index;
@@ -80,7 +82,14 @@ export function PresentStage({ deckTitle, cards, theme, onExit }: PresentStagePr
       </ReaderChrome>
 
       <div className="present-stage">
-        <ReaderCard key={card.id} card={card} theme={theme} />
+        {/* key on the card id: every slide change remounts the card, which
+            replays that slide's entrance animations from the plan. */}
+        <ReaderCard
+          key={card.id}
+          card={card}
+          theme={theme}
+          slideMotion={motion?.slides[index] ?? null}
+        />
       </div>
 
       <footer className="present-footer">
