@@ -22,3 +22,4 @@ export {
   type ResolvedImage,
 } from "./images";
 export { buildThemePotxBuffer } from "./theme-potx";
+export { injectMotion, timingXml, transitionXml, shapeIdsInSlideXml } from "./motion-xml";

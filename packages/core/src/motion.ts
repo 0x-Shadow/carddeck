@@ -120,7 +120,21 @@ const ENTRANCE_VALUES = new Set(["fade", "wipeUp", "flyLeft", "zoom"]);
  * value isn't a recognizable plan; drops malformed slides/builds rather than
  * throwing — a stored plan should never break the reader.
  */
+/**
+ * Parse a stored motion plan. Tolerates the two shapes it meets in practice:
+ * the JSON string straight off the `deck.motion` column, and an already-parsed
+ * object (API payloads, tests). Unparseable or unknown input yields `null`
+ * rather than throwing, so a corrupt plan degrades to "no animation" instead
+ * of taking a route down with it.
+ */
 export function parseMotionPlan(raw: unknown): MotionPlan | null {
+  if (typeof raw === "string") {
+    try {
+      return parseMotionPlan(JSON.parse(raw) as unknown);
+    } catch {
+      return null;
+    }
+  }
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
   const obj = raw as Record<string, unknown>;
   if (typeof obj.preset !== "string" || !PRESET_VALUES.has(obj.preset)) return null;

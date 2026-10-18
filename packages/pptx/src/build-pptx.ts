@@ -11,6 +11,7 @@
  * native editable shapes (text boxes with runs), not a flat image.
  */
 import PptxGenJS from "pptxgenjs";
+import JSZip from "jszip";
 import { htmlToPptxText } from "html2pptx";
 import {
   nullResolver,
@@ -18,6 +19,8 @@ import {
   type SlideImage,
   type ImageLayout,
 } from "./images";
+import { injectMotion } from "./motion-xml";
+import { MAX_MOTION_BUILDS, type MotionPlan } from "@carddeck/core";
 
 export type { ImageResolver, ImageLayout, SlideImage, ResolvedImage } from "./images";
 export { collectSlideImages } from "./images";
@@ -56,6 +59,12 @@ export interface BuildPptxOptions {
   resolveImage?: ImageResolver;
   /** Images to embed on each slide, by slide index. Defaults to none. */
   images?: Array<SlideImage[] | undefined>;
+  /**
+   * The deck's motion plan. Plan order matches card order (1-based slide
+   * index). Injected as OOXML transition + timing after the file is written;
+   * without it the deck exports with no animation at all.
+   */
+  motion?: MotionPlan | null;
 }
 
 /** Slide geometry in inches (PptxGenJS LAYOUT_WIDE = 13.333 x 7.5). */
@@ -123,6 +132,35 @@ const defaultConverter: HtmlConverter = (html) =>
   htmlToPptxText(html) as unknown as PptxTextItem[];
 
 /**
+ * Split converted text items into `parts` contiguous shapes.
+ *
+ * One `addText` call makes one shape no matter how many runs it holds, which
+ * would collapse a whole slide into a single animation target. Splitting on
+ * run boundaries lets each group become its own text box, so a motion plan's
+ * per-block builds each land on a real shape they can stagger.
+ *
+ * Groups are sized as evenly as the item count allows; anything left over
+ * lands in the last group, so no run is ever dropped. Returns `[items]` (a
+ * single group) when there is nothing to split, which is exactly the shape
+ * layout the exporter produced before motion existed.
+ */
+export function groupTextItems(items: PptxTextItem[], parts: number): PptxTextItem[][] {
+  if (parts <= 1 || items.length <= 1) return [items];
+  const groups: PptxTextItem[][] = [];
+  const base = Math.floor(items.length / parts);
+  const remainder = items.length % parts;
+  let cursor = 0;
+  for (let i = 0; i < parts; i++) {
+    // Spread the remainder one item at a time so groups stay balanced.
+    const size = base + (i < remainder ? 1 : 0);
+    if (size === 0) break;
+    groups.push(items.slice(cursor, cursor + size));
+    cursor += size;
+  }
+  return groups;
+}
+
+/**
  * Build a .pptx Buffer from rendered slides.
  *
  * @param slides one `{ html }` per card (from `renderSlidesHtml`)
@@ -155,16 +193,32 @@ export async function buildPptxBuffer(
   for (const [index, { html }] of slides.entries()) {
     const items = convert(html);
     const slide = pres.addSlide();
-    slide.addText(items as never, {
-      x: MARGIN,
-      y: MARGIN,
-      w: SLIDE_W - MARGIN * 2,
-      h: SLIDE_H - MARGIN * 2,
-      valign: "top",
-      fontFace: "Arial",
-      fontSize: 14,
-      color: "000000",
-    });
+
+    // How many shapes this slide wants: at most one per planned build (the
+    // plan's build count already matches 1 title + N blocks), never more than
+    // the slide has text items to distribute, and never more than
+    // MAX_MOTION_BUILDS — the same cap the planner applies.
+    const planned = opts.motion?.slides[index]?.builds.length ?? 0;
+    const parts = Math.max(1, Math.min(planned, items.length, MAX_MOTION_BUILDS));
+    const groups = groupTextItems(items, parts);
+
+    // With motion, groups stack down the slide so each is a distinct,
+    // separately-animatable box; without motion they share the old full-bleed
+    // box, keeping the pre-motion layout byte-for-byte.
+    const rowH = (SLIDE_H - MARGIN * 2) / groups.length;
+
+    for (const [groupIndex, group] of groups.entries()) {
+      slide.addText(group as never, {
+        x: MARGIN,
+        y: MARGIN + rowH * groupIndex,
+        w: SLIDE_W - MARGIN * 2,
+        h: rowH,
+        valign: "top",
+        fontFace: "Arial",
+        fontSize: 14,
+        color: "000000",
+      });
+    }
 
     for (const image of images[index] ?? []) {
       const embedded = await embedImage(slide, image, resolveImage);
@@ -186,5 +240,15 @@ export async function buildPptxBuffer(
   }
 
   const out = await pres.write({ outputType: "nodebuffer" });
-  return Buffer.from(out as ArrayBuffer);
+  let buffer = Buffer.from(out as ArrayBuffer);
+
+  // Post-build motion injection: PptxGenJS has no animation API, so the
+  // transition/timing OOXML is written into the finished file.
+  if (opts.motion && opts.motion.slides.length > 0) {
+    const zip = await JSZip.loadAsync(buffer);
+    await injectMotion(zip, opts.motion);
+    buffer = await zip.generateAsync({ type: "nodebuffer" });
+  }
+
+  return buffer;
 }

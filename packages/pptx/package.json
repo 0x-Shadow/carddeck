@@ -13,12 +13,13 @@
   "dependencies": {
     "@carddeck/core": "*",
     "html2pptx": "^0.0.5",
+    "jszip": "^3.10.2",
     "pptxgenjs": "^4.0.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "vitest": "^2.1.0",
-    "typescript": "^5.6.0"
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
   }
 }

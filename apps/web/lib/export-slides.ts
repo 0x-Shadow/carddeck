@@ -3,7 +3,7 @@ import * as t from "@/drizzle/schema";
 import { asc, eq } from "drizzle-orm";
 import { rowToTheme } from "@/lib/themes-presets";
 import { readAssetDataUrl, MAX_ASSET_BYTES } from "@/lib/assets";
-import { PRESET_THEMES, type Block, type Theme } from "@carddeck/core";
+import { PRESET_THEMES, parseMotionPlan, type Block, type MotionPlan, type Theme } from "@carddeck/core";
 import type { SlideInput, ImageResolver, ResolvedImage } from "@carddeck/pptx";
 
 /**
@@ -22,6 +22,8 @@ export interface ExportDeckData {
   format: string;
   theme: Theme;
   cards: SlideInput[];
+  /** The deck's motion plan, when one is stored and valid. */
+  motion: MotionPlan | null;
 }
 
 /**
@@ -54,6 +56,7 @@ export async function loadSlideInputs(
       title: c.title,
       blocks: parseBlocks(c.blocks),
     })),
+    motion: parseMotionPlan(deck.motion),
   };
 }
 

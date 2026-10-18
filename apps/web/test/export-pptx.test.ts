@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import JSZip from "jszip";
 import {
   freshDb,
   seedUser,
@@ -105,6 +106,58 @@ describe("GET /api/deck/[id]/export/pptx", () => {
     const { GET } = await import("@/app/api/deck/[id]/export/pptx/route");
     const res = await GET(jsonRequest("http://t/x/nope", "GET"), params("nope"));
     expect(res.status).toBe(404);
+  });
+});
+
+describe("GET /api/deck/[id]/export/pptx motion", () => {
+  beforeEach(() => freshDb());
+  afterEach(() => vi.unstubAllEnvs());
+
+  /** Seed motion onto the deck row and return slide1.xml of the export. */
+  async function exportSlide1Xml(deckId: string, userId: string, motion: unknown) {
+    const db = getDb();
+    // Direct eq() — callback-form .where() is broken on update() here.
+    await db
+      .update(t.deck)
+      .set({ motion: JSON.stringify(motion) })
+      .where(eq(t.deck.id, deckId));
+
+    const { useSession } = await import("./helpers/route");
+    useSession(userId);
+    const { GET } = await import("@/app/api/deck/[id]/export/pptx/route");
+    const res = await GET(jsonRequest(`http://t/x/${deckId}`, "GET"), params(deckId));
+    expect(res.status).toBe(200);
+    const zip = await JSZip.loadAsync(Buffer.from(await res.arrayBuffer()));
+    return (await zip.file("ppt/slides/slide1.xml")!.async("string")) as string;
+  }
+
+  it("carries the deck's motion plan into the file", async () => {
+    const { userId, deckId } = await seedExportDeck({ isPublic: 0, shareSlug: null });
+    const s1 = await exportSlide1Xml(deckId, userId, {
+      preset: "punchy",
+      slides: [
+        { transition: "push", builds: [{ effect: "wipeUp", delayMs: 200 }] },
+        { transition: "fade", builds: [{ effect: "fade", delayMs: 0 }] },
+      ],
+    });
+    expect(s1).toContain("<p:transition");
+    expect(s1).toContain("<p:push");
+    expect(s1).toContain("<p:timing>");
+    expect(s1).toContain('filter="wipe(down)"');
+  });
+
+  it("skips animation entirely when CARDDECK_MOTION=off", async () => {
+    const { userId, deckId } = await seedExportDeck({ isPublic: 0, shareSlug: null });
+    vi.stubEnv("CARDDECK_MOTION", "off");
+    const s1 = await exportSlide1Xml(deckId, userId, {
+      preset: "punchy",
+      slides: [
+        { transition: "push", builds: [{ effect: "fade", delayMs: 0 }] },
+        { transition: "fade", builds: [] },
+      ],
+    });
+    expect(s1).not.toContain("<p:timing>");
+    expect(s1).not.toContain("<p:transition");
   });
 });
 

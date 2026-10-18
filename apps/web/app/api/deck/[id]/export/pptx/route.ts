@@ -35,6 +35,17 @@ export async function GET(_req: Request, { params }: Params) {
   const buffer = await buildPptxBuffer(slides, {
     resolveImage: createImageResolver(id),
     images,
+    // Animations ride along by default; CARDDECK_MOTION=off is the kill
+    // switch for anyone whose downstream tool chokes on OOXML timing. The
+    // plan is sliced to the slides actually exported (unready cards drop
+    // out), so injection never targets a slide that isn't there.
+    motion:
+      process.env.CARDDECK_MOTION === "off" || !loaded.data.motion
+        ? undefined
+        : {
+            ...loaded.data.motion,
+            slides: loaded.data.motion.slides.slice(0, slides.length),
+          },
   });
 
   return new NextResponse(new Uint8Array(buffer), {

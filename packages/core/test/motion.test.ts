@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { planMotion, planMotionForDeck } from "../src/motion";
+import { planMotion, planMotionForDeck, parseMotionPlan } from "../src/motion";
 import type { Block } from "../src/blocks";
 
 const counts2 = { slides: 2, shapes: [3, 4] };
@@ -75,5 +75,26 @@ describe("planMotionForDeck", () => {
   it("falls back to title-only when blocks are unparseable", () => {
     const plan = planMotionForDeck("subtle", [card("not json")], "deck-3");
     expect(plan.slides[0].builds).toHaveLength(1);
+  });
+});
+
+describe("parseMotionPlan", () => {
+  it("parses a plan round-tripped through the deck.motion column", () => {
+    // The column is text, so what reaches the parser is JSON, not an object.
+    const plan = planMotion("punchy", { slides: 2, shapes: [3, 1] }, "deck-4");
+    expect(parseMotionPlan(JSON.stringify(plan))).toEqual(plan);
+  });
+
+  it("accepts an already-parsed object too", () => {
+    const plan = planMotion("subtle", { slides: 1, shapes: [2] }, "deck-5");
+    expect(parseMotionPlan(plan)).toEqual(plan);
+  });
+
+  it("returns null for junk instead of throwing", () => {
+    expect(parseMotionPlan("not json")).toBeNull();
+    expect(parseMotionPlan(null)).toBeNull();
+    expect(parseMotionPlan(42)).toBeNull();
+    expect(parseMotionPlan([])).toBeNull();
+    expect(parseMotionPlan({ preset: "hyperspace" })).toBeNull();
   });
 });
