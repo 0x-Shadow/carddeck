@@ -13,23 +13,35 @@ Prompt → editable outline → AI-generated themed deck → refine → Present 
 
 ## Features
 
+![Carddeck in present mode](docs/assets/carddeck.gif)
+
 - **Prompt → outline → deck.** Describe the deck (format, card count, tone);
   the worker drafts an outline you can rename, extend, and trim; generation
   then streams cards in live over server-sent events.
+- **Two PowerPoint engines.** The default `native` renderer (PptxGenJS)
+  keeps charts editable and injects real motion; the `pptagent` engine
+  renders the same designed 1280×720 HTML slides as positioned, editable
+  PowerPoint shapes — HTML-faithful composition with chart rasterization.
+  Pick either in the UI, the HTTP route (`?engine=pptagent`), or MCP
+  (`export_engine` / `engine`).
 - **PowerPoint export first-class.** `/api/deck/[id]/export/pptx` renders a
-  fully editable, OOXML-correct .pptx (16:9, theme colors, real text runs) —
-  plus `.potx` theme templates and print-quality **PDF** (headless Chromium).
-- **Animations that survive export.** Subtle, punchy, and cinematic motion
+  composed, fully editable, OOXML-correct .pptx (16:9, theme typography and
+  color, real text runs, native data-backed charts) — plus `.potx` theme
+  templates and print-quality **PDF** (headless Chromium) from the same slide
+  composition.
+- **Animations that survive export.** Subtle, punchy, cinematic, and 3D motion
   presets drive the web present mode *and* become real entrance animations and
-  slide transitions inside the exported .pptx.
+  slide transitions inside the exported .pptx. Re-exporting keeps the stored
+  plan intact.
 - **Images from anywhere.** Upload, link, or point an agent at a URL or a file
   on disk — images live in `DATA_DIR/assets`, print identically in PDFs, and
   embed as real pictures in .pptx exports.
 - **Editable canvas.** Every card edits in place — headings, paragraphs,
   lists, quotes, callouts, images, dividers, columns, and charts — with
   optimistic saves.
-- **Themes.** Eight presets (Light, Dark, Midnight, Sunset, Forest, Mono,
-  Paper, Neon); switch any deck instantly without losing your editing session.
+- **Themes.** Twelve presets (Cyberpunk, Aurora, Luxe, Minimal, Light, Dark,
+  Midnight, Sunset, Forest, Mono, Paper, Neon); switch any deck instantly
+  without losing your editing session.
 - **Agent-ready (MCP).** A local [MCP server](docs/MCP.md) lets OpenCode,
   Claude Code, Codex, and any MCP client build decks, add images, set motion,
   and export files for you — see [Agent integrations](#agent-integrations-mcp).
@@ -161,14 +173,23 @@ OPENAI_BASE_URL=                # optional: e.g. http://localhost:11434/v1
 
 ## Exporting
 
-- **PowerPoint (.pptx)** — no extra setup; the pipeline is DOM-free
-  (`packages/pptx`: `pptxgenjs` + `html2pptx`). Headings, paragraphs, lists,
-  quotes, callouts, dividers, and columns come out fully editable and
+- **PowerPoint (.pptx), two engines.** `native` (default) is the DOM-free
+  designed pipeline (`packages/pptx`: `pptxgenjs`), fully editable and
+  theme-colored, with real text runs, native data-backed charts, and real
+  PowerPoint entrance animations + slide transitions; `pptagent` renders the
+  same designed 1280×720 HTML slides through the vendored PPTAgent
+  `html2pptx` converter into positioned shapes (HTML-faithful composition;
+  charts rasterize). Choose in the UI's Export menu, the HTTP route
+  (`?engine=pptagent`), or MCP (`engine`/`exportEngine`). The second engine
+  never overwrites the first: its file is suffixed `(PPTAgent)`.
+- Cover and closing layouts, editorial two-column slides, card grids, KPI
+  tiles, quotes, callouts, and dividers come out fully editable and
   theme-colored; uploaded/linked **images embed as real pictures**; charts
-  render as readable data summaries; and decks with a motion preset carry
-  **real PowerPoint entrance animations + slide transitions**
-  (`CARDDECK_MOTION=off` strips them). PDF export prints through a real
-  browser, so it keeps images and charts exactly as they appear on screen.
+  are **native OOXML charts with editable data** under the native engine;
+  and decks with a motion preset carry **real PowerPoint entrance animations
+  + slide transitions** (`CARDDECK_MOTION=off` strips them). PDF export
+  prints the same composition through headless Chromium, so covers, side
+  imagery, and charts match the deck.
 - **PDF** — uses headless Chromium via Playwright. One-time browser install:
 
   ```bash
@@ -210,7 +231,9 @@ turborepo
 ├── packages/core   shared types, theme presets, block model, validation
 ├── packages/ai     AIProvider interface + StubProvider (default) + OpenAIProvider
 ├── packages/pptx   DOM-free deck renderers: slide HTML + motion timing for
-│                   .pptx/.potx and paged-media print HTML for .pdf
+│                   .pptx/.potx and paged-media print HTML for .pdf; plus the
+│                   vendored PPTAgent html2pptx converter (packages/pptx/
+│                   vendor/pptagent) used by the second PPTX engine
 └── e2e             Playwright specs + serve.mjs (isolated prod-stack runner)
 ```
 
@@ -226,7 +249,7 @@ session, no port.
 ## Testing
 
 ```bash
-npm test         # 286 unit/integration tests (core, ai, pptx, worker, mcp, web)
+npm test         # 323 unit/integration tests (core, ai, pptx, worker, mcp, web)
 npm run e2e      # 10 Playwright specs against a production build:
                  #   generate · theme · present · reader · retry · export
                  #   (pptx+pdf) · images · motion · auth/landing/dashboard
@@ -234,6 +257,9 @@ npm run e2e      # 10 Playwright specs against a production build:
 
 ## Further reading
 
+- [`docs/PPTAGENT.md`](docs/PPTAGENT.md) — the second PowerPoint engine
+  (HTML → PPTX via the vendored PPTAgent converter): usage, engines
+  compared, requirements, and limits.
 - [`docs/MCP.md`](docs/MCP.md) — connecting agents (OpenCode, Claude Code,
   Codex, …), the full tool reference, and self-hosting notes.
 - [`docs/SETUP.md`](docs/SETUP.md) — detailed setup, production notes,

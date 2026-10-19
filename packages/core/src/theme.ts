@@ -22,6 +22,27 @@ export interface Theme {
   shadow: string;
 }
 
+/**
+ * Generic fallbacks appended to every emitted font stack.
+ *
+ * A `font-family` list that ends at a specific family has no safe landing spot:
+ * if that family is missing, the browser substitutes its own *default* font
+ * (Times New Roman on most systems) rather than the next generic. Terminating
+ * with `sans-serif` guarantees a sane degradation instead of serif body copy.
+ */
+const FONT_FALLBACK = ", ui-sans-serif, system-ui, sans-serif";
+
+/**
+ * Append fallbacks to a theme's font, unless the theme already supplied its own
+ * terminal generic (e.g. `"Inter, sans-serif"`).
+ */
+function withFallback(font: string): string {
+  const value = font.trim();
+  if (!value) return `ui-sans-serif, system-ui, sans-serif`;
+  if (/(^|,)\s*(sans-serif|serif|monospace|system-ui)\s*$/i.test(value)) return value;
+  return `${value}${FONT_FALLBACK}`;
+}
+
 /** CSS custom-property map derived from a theme. */
 export function applyThemeTokens(theme: Theme): Record<string, string> {
   return {
@@ -30,8 +51,8 @@ export function applyThemeTokens(theme: Theme): Record<string, string> {
     "--ink": theme.colors.ink,
     "--accent": theme.colors.accent,
     "--muted": theme.colors.muted,
-    "--font-display": theme.fonts.display,
-    "--font-body": theme.fonts.body,
+    "--font-display": withFallback(theme.fonts.display),
+    "--font-body": withFallback(theme.fonts.body),
     "--radius": theme.radius,
     "--shadow": theme.shadow,
   };
@@ -110,5 +131,41 @@ export const PRESET_THEMES: Theme[] = [
     colors: { page: "#0a0a12", surface: "#12121f", ink: "#f0f0ff", accent: "#00e5ff", muted: "#8f8fb0" },
     radius: "8px",
     shadow: "0 0 24px rgba(0,229,255,0.25)",
+  },
+  {
+    id: "cyberpunk",
+    name: "Cyberpunk",
+    isPreset: true,
+    fonts: { display: "Space Grotesk", body: "Inter" },
+    colors: { page: "#05070f", surface: "#0d111d", ink: "#f1f5f9", accent: "#00f2fe", muted: "#818cf8" },
+    radius: "14px",
+    shadow: "0 10px 40px rgba(0, 242, 254, 0.2)",
+  },
+  {
+    id: "aurora",
+    name: "Aurora",
+    isPreset: true,
+    fonts: { display: "Poppins", body: "Inter" },
+    colors: { page: "#0c0817", surface: "#17102b", ink: "#f8fafc", accent: "#c084fc", muted: "#a855f7" },
+    radius: "16px",
+    shadow: "0 12px 40px rgba(192, 132, 252, 0.25)",
+  },
+  {
+    id: "luxe",
+    name: "Luxe",
+    isPreset: true,
+    fonts: { display: "Cinzel", body: "Inter" },
+    colors: { page: "#06120d", surface: "#0c2017", ink: "#f2fbf6", accent: "#10b981", muted: "#6ee7b7" },
+    radius: "12px",
+    shadow: "0 12px 36px rgba(16, 185, 129, 0.22)",
+  },
+  {
+    id: "minimal",
+    name: "Minimal",
+    isPreset: true,
+    fonts: { display: "Inter", body: "Inter" },
+    colors: { page: "#f1f5f9", surface: "#ffffff", ink: "#0f172a", accent: "#6366f1", muted: "#64748b" },
+    radius: "16px",
+    shadow: "0 20px 40px -15px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.05)",
   },
 ];

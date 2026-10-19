@@ -23,6 +23,7 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 export async function waitFor<T>(
   probe: () => Promise<T | null>,
   opts: WaitOptions = {},
+  onTick?: () => Promise<void> | void,
 ): Promise<T | null> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS;
   const pollMs = opts.pollMs ?? DEFAULT_POLL_MS;
@@ -30,6 +31,13 @@ export async function waitFor<T>(
   for (;;) {
     const value = await probe();
     if (value !== null) return value;
+    if (onTick) {
+      try {
+        await onTick();
+      } catch {
+        // ignore tick errors
+      }
+    }
     const remaining = deadline - Date.now();
     if (remaining <= 0) return null;
     await sleep(Math.min(pollMs, remaining));
@@ -37,13 +45,13 @@ export async function waitFor<T>(
 }
 
 /** Wait for a generation job to reach a terminal status (done/error/cancelled). */
-export async function waitForJobTerminal(jobId: string, opts?: WaitOptions) {
+export async function waitForJobTerminal(jobId: string, opts?: WaitOptions, onTick?: () => Promise<void> | void) {
   return waitFor(async () => {
     const job = await getDb().query.generationJob.findFirst({
       where: (j, { eq }) => eq(j.id, jobId),
     });
     return job && isTerminalStatus(job.status) ? job : null;
-  }, opts);
+  }, opts, onTick);
 }
 
 /** Wait for a deck to reach one of `statuses` (e.g. ready/error). */
@@ -51,11 +59,12 @@ export async function waitForDeckStatus(
   deckId: string,
   statuses: readonly string[],
   opts?: WaitOptions,
+  onTick?: () => Promise<void> | void,
 ) {
   return waitFor(async () => {
     const deck = await getDb().query.deck.findFirst({
       where: (d, { eq }) => eq(d.id, deckId),
     });
     return deck && statuses.includes(deck.status) ? deck : null;
-  }, opts);
+  }, opts, onTick);
 }

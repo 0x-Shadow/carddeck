@@ -10,10 +10,16 @@ export interface ExportMenuProps {
 interface ExportItem {
   label: string;
   ext: "pptx" | "potx" | "pdf";
+  /**
+   * PPTX engines: undefined = native PptxGenJS designed renderer (editable
+   * charts + motion); "pptagent" = the vendored PPTAgent HTML→PPTX converter.
+   */
+  engine?: "pptagent";
 }
 
 const ITEMS: ExportItem[] = [
   { label: "PowerPoint (.pptx)", ext: "pptx" },
+  { label: "PowerPoint · HTML engine (.pptx)", ext: "pptx", engine: "pptagent" },
   { label: "PDF (.pdf)", ext: "pdf" },
   { label: "Theme template (.potx)", ext: "potx" },
 ];
@@ -54,14 +60,16 @@ export function ExportMenu({ deckId, deckTitle }: ExportMenuProps) {
     setError(null);
     setOpen(false);
     try {
-      const res = await fetch(`/api/deck/${deckId}/export/${item.ext}`);
+      const query = item.engine ? `?engine=${item.engine}` : "";
+      const res = await fetch(`/api/deck/${deckId}/export/${item.ext}${query}`);
       if (!res.ok) throw new Error(`export failed (${res.status})`);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       const clean = deckTitle.replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "-");
-      a.download = `${clean || "deck"}.${item.ext}`;
+      const suffix = item.engine === "pptagent" ? " (PPTAgent)" : "";
+      a.download = `${clean || "deck"}${suffix}.${item.ext}`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -91,7 +99,7 @@ export function ExportMenu({ deckId, deckTitle }: ExportMenuProps) {
         <div className="export-menu-list" role="menu">
           {ITEMS.map((item) => (
             <button
-              key={item.ext}
+              key={item.label}
               type="button"
               role="menuitem"
               className="export-menu-item"

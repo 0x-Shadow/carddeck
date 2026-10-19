@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { chromium } from "playwright";
+import { isPptagentAvailable } from "@carddeck/pptx";
 import { makeTestDb, setTestDb, type DB } from "../../web/lib/db";
 import { runOnce } from "../../worker/src/pipeline";
 import { StubProvider } from "@carddeck/ai";
@@ -29,6 +31,23 @@ const TINY_PNG = Buffer.from(
 );
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * The HTML-engine export needs the vendored PPTAgent converter, its node deps,
+ * and a real chromium. Probe before the tests are declared so a machine
+ * without them skips instead of failing.
+ */
+const pptagentAvailable =
+  isPptagentAvailable() &&
+  (await (async () => {
+    try {
+      const browser = await chromium.launch();
+      await browser.close();
+      return true;
+    } catch {
+      return false;
+    }
+  })());
 
 async function connect(opts?: ServerOptions): Promise<Client> {
   const server = await createServer(opts);
@@ -125,6 +144,49 @@ describe("carddeck MCP server", () => {
     expect(deck.motion.slides).toHaveLength(2);
   });
 
+  it("stores rich Gamma-style blocks supplied by an agent", async () => {
+    const client = await connect();
+    const created = await call(client, "create_deck_from_cards", {
+      title: "Rich deck",
+      cards: [
+        {
+          title: "Cover",
+          blocks: [
+            { type: "heading", level: 1, text: ["The future, presented"] },
+            { type: "callout", tone: "info", text: ["AI-native storytelling"] },
+          ],
+        },
+        {
+          title: "Evidence",
+          blocks: [
+            { type: "heading", level: 2, text: ["Evidence"] },
+            {
+              type: "chart",
+              kind: "bar",
+              data: {
+                labels: ["Q1", "Q2", "Q3"],
+                series: [{ name: "Growth", values: [12, 48, 96] }],
+              },
+            },
+          ],
+        },
+      ],
+      theme: "cyberpunk",
+      motion: "3d",
+    });
+    expect(created.isError).toBe(false);
+
+    const got = await call(client, "get_deck", { deckId: created.body.deckId });
+    const deck = got.body.deck as any;
+    expect(deck.cards[0].blocks).toEqual([
+      { type: "heading", level: 1, text: ["The future, presented"] },
+      { type: "callout", tone: "info", text: ["AI-native storytelling"] },
+    ]);
+    expect(deck.cards[1].blocks[1].data.series[0].values).toEqual([12, 48, 96]);
+    expect(deck.motion.preset).toBe("3d");
+    expect(deck.motion.slides).toHaveLength(2);
+  });
+
   it("generates a deck from a prompt and waits until it is ready", async () => {
     const client = await connect({ waitTimeoutMs: 9000, pollMs: 10 });
     let settled: { isError: boolean; body: Envelope } | null = null;
@@ -153,7 +215,9 @@ describe("carddeck MCP server", () => {
   });
 
   it("returns partial state with a note when generation outlives the deadline", async () => {
-    const client = await connect({ waitTimeoutMs: 80, pollMs: 5 });
+    // Disable the in-process worker so the deadline genuinely expires before
+    // any queued job is claimed — the external-worker contract.
+    const client = await connect({ waitTimeoutMs: 80, pollMs: 5, selfDrive: false });
     const { isError, body } = await call(client, "create_deck", {
       prompt: "Brief",
       numCards: 2,
@@ -344,6 +408,38 @@ describe("carddeck MCP server", () => {
     expect(readFileSync(file).subarray(0, 2).toString("latin1")).toBe("PK");
   });
 
+  it.skipIf(!pptagentAvailable)(
+    "exports a deck through the PPTAgent HTML engine",
+    async () => {
+      const client = await connect();
+      const created = await call(client, "create_deck_from_cards", {
+        title: "HTML Engine",
+        cards: [
+          { title: "Cover", content: ["intro line"] },
+          { title: "Body", content: ["middle line"] },
+          { title: "Close", content: ["final line"] },
+        ],
+      });
+      const deckId = created.body.deckId as string;
+
+      const out = await call(client, "export_deck", {
+        deckId,
+        format: "pptx",
+        engine: "pptagent",
+      });
+      expect(out.isError).toBe(false);
+      expect(out.body.engine).toBe("pptagent");
+      const file = out.body.path as string;
+      expect(file).toContain("PPTAgent");
+      expect(existsSync(file)).toBe(true);
+      const bytes = readFileSync(file);
+      expect(bytes.subarray(0, 2).toString("latin1")).toBe("PK");
+      // Native text runs prove the converter produced shapes, not a raster.
+      expect(bytes.includes(Buffer.from("<a:t>Cover</a:t>"))).toBe(true);
+    },
+    120_000,
+  );
+
   it("answers unknown decks and themes with an error envelope", async () => {
     const client = await connect();
 
@@ -362,5 +458,36 @@ describe("carddeck MCP server", () => {
     });
     expect(badTheme.isError).toBe(true);
     expect(String(badTheme.body.error)).toContain("unknown theme");
+  });
+
+  it("creates an extraordinary Gamma deck with 3D motion and direct PPTX export in one call", async () => {
+    // No external pump: the server's in-process worker finishes the queued
+    // outline + cards jobs while the tool waits.
+    const client = await connect({ waitTimeoutMs: 9000, pollMs: 10 });
+    const result = await call(client, "create_gamma_deck", {
+      prompt: "Next-Gen Quantum Computing",
+      numCards: 3,
+      theme: "cyberpunk",
+      motion: "3d",
+      exportFormat: "pptx",
+    });
+    expect(result.isError).toBe(false);
+    expect(result.body.status).toBe("ready");
+    expect(result.body.motion).toBe("3d");
+    expect((result.body.cards as unknown[]).length).toBe(3);
+    expect(result.body.exportPath).toBeDefined();
+
+    const exportFile = result.body.exportPath as string;
+    expect(existsSync(exportFile)).toBe(true);
+    expect(readFileSync(exportFile).subarray(0, 2).toString("latin1")).toBe("PK");
+
+    // Inspect the deck: verify cards contain rich blocks including images and stats
+    const got = await call(client, "get_deck", { deckId: result.body.deckId });
+    const deck = got.body.deck as any;
+    expect(deck.motion.preset).toBe("3d");
+    expect(deck.cards).toHaveLength(3);
+    // Cover card carries a curated online image and rich blocks
+    const coverBlocks = deck.cards[0].blocks;
+    expect(coverBlocks.some((b: any) => b.type === "image" && b.src.startsWith("https://images.unsplash.com/"))).toBe(true);
   });
 });

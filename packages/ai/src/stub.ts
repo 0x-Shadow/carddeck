@@ -1,4 +1,4 @@
-import type { Block, OutlineCard } from "@carddeck/core";
+import { getThematicOnlineImage, type Block, type OutlineCard } from "@carddeck/core";
 import type { AIProvider, CardRequest, OutlineRequest, ReviseRequest, ReviseResult } from "./types";
 
 /** Deterministic string hash so a prompt always yields the same outline. */
@@ -49,7 +49,8 @@ const hookFailedOnce = new Set<string>();
 /**
  * A deterministic, offline AI provider. Same input → same output, no network,
  * no API key. Used by tests and as the dev default so the app is fully usable
- * without credentials. Content is realistic-but-generic placeholder copy.
+ * without credentials. Generates rich Gamma-style presentation cards with
+ * metrics, charts, columns, quotes, and curated online imagery.
  */
 export class StubProvider implements AIProvider {
   readonly name = "stub";
@@ -85,20 +86,167 @@ export class StubProvider implements AIProvider {
     }
 
     const seed = hash(req.outline.title + req.themeName);
+    const cardIdx = req.context.findIndex((c) => c.id === req.outline.id);
+    const onlineImg = getThematicOnlineImage(req.outline.title, cardIdx >= 0 ? cardIdx : 0, "behind");
+
     if (req.outline.intent === "cover") {
       return [
         { type: "heading", level: 1, text: [req.outline.title] },
-        { type: "image", src: "", layout: "behind", caption: req.themeName },
-        { type: "paragraph", text: [`A ${req.format} by Carddeck`] },
+        { type: "image", src: onlineImg.src, layout: "behind", caption: req.themeName },
+        { type: "callout", tone: "info", text: [`Executive Briefing · ${req.themeName} Edition`] },
+        { type: "paragraph", text: [`A ${req.format} crafted with precision by Carddeck`] },
       ];
     }
+
     if (req.outline.intent === "close") {
       return [
         { type: "heading", level: 1, text: [req.outline.title] },
-        { type: "quote", text: [FILLER_SENTENCES[seed % FILLER_SENTENCES.length]], attribution: "Carddeck" },
-        { type: "paragraph", text: ["Thank you — questions welcome."] },
+        { type: "callout", tone: "success", text: ["Strategic Alignment: Immediate deployment and execution phase."] },
+        { type: "quote", text: [FILLER_SENTENCES[seed % FILLER_SENTENCES.length]], attribution: "Executive Steering Council" },
+        { type: "paragraph", text: ["Thank you — discussion and strategic Q&A."] },
       ];
     }
+
+    const mod = ((cardIdx >= 0 ? cardIdx : seed) % 6);
+
+    if (mod === 1) {
+      // KPI Stat Showcase: 3-column metric cards
+      return [
+        { type: "heading", level: 2, text: [req.outline.title] },
+        { type: "paragraph", text: [FILLER_SENTENCES[seed % FILLER_SENTENCES.length]] },
+        {
+          type: "columns",
+          columns: [
+            [
+              { type: "heading", level: 3, text: ["+148%"] },
+              { type: "callout", tone: "success", text: ["YoY Growth"] },
+              { type: "paragraph", text: ["Accelerating enterprise expansion across regions."] },
+            ],
+            [
+              { type: "heading", level: 3, text: ["$24.5M"] },
+              { type: "callout", tone: "info", text: ["ARR Milestone"] },
+              { type: "paragraph", text: ["Exceeding target plan with durable unit economics."] },
+            ],
+            [
+              { type: "heading", level: 3, text: ["99.98%"] },
+              { type: "callout", tone: "info", text: ["System Uptime"] },
+              { type: "paragraph", text: ["Enterprise SLA reliability with zero downtime."] },
+            ],
+          ],
+        },
+      ];
+    }
+
+    if (mod === 2) {
+      // Data Chart Insights
+      const isDonut = seed % 2 === 0;
+      return [
+        { type: "heading", level: 2, text: [req.outline.title] },
+        {
+          type: "callout",
+          tone: "info",
+          text: ["Performance Analytics: Benchmark metrics demonstrating sustained quarterly growth."],
+        },
+        {
+          type: "chart",
+          kind: isDonut ? "donut" : "bar",
+          data: {
+            labels: ["Q1 Baseline", "Q2 Scale", "Q3 Acceleration", "Q4 Peak"],
+            series: [
+              { name: "Delivered", values: [35, 68, 112, 175] },
+              { name: "Target", values: [30, 60, 95, 140] },
+            ],
+          },
+        },
+        {
+          type: "bulletList",
+          items: [
+            [FILLER_SENTENCES[(seed + 1) % FILLER_SENTENCES.length]],
+            [FILLER_SENTENCES[(seed + 2) % FILLER_SENTENCES.length]],
+          ],
+        },
+      ];
+    }
+
+    if (mod === 3) {
+      // Split Layout: Narrative + Online Image
+      const sideImg = getThematicOnlineImage(req.outline.title, cardIdx, "full");
+      return [
+        { type: "heading", level: 2, text: [req.outline.title] },
+        {
+          type: "columns",
+          columns: [
+            [
+              { type: "paragraph", text: [FILLER_SENTENCES[seed % FILLER_SENTENCES.length]] },
+              {
+                type: "bulletList",
+                items: [
+                  [FILLER_SENTENCES[(seed + 1) % FILLER_SENTENCES.length]],
+                  [FILLER_SENTENCES[(seed + 2) % FILLER_SENTENCES.length]],
+                ],
+              },
+              { type: "callout", tone: "success", text: ["Key Takeaway: Validated by cross-functional review."] },
+            ],
+            [
+              { type: "image", src: sideImg.src, layout: "full", caption: sideImg.caption },
+            ],
+          ],
+        },
+      ];
+    }
+
+    if (mod === 4) {
+      // Process timeline: numbered stages across a row.
+      return [
+        { type: "heading", level: 2, text: [req.outline.title] },
+        { type: "paragraph", text: [FILLER_SENTENCES[seed % FILLER_SENTENCES.length]] },
+        {
+          type: "columns",
+          columns: [
+            [
+              { type: "heading", level: 3, text: ["01"] },
+              { type: "callout", tone: "info", text: ["DISCOVER"] },
+              { type: "paragraph", text: ["Frame the problem and align on the outcome."] },
+            ],
+            [
+              { type: "heading", level: 3, text: ["02"] },
+              { type: "callout", tone: "info", text: ["DESIGN"] },
+              { type: "paragraph", text: ["Shape the solution and validate with stakeholders."] },
+            ],
+            [
+              { type: "heading", level: 3, text: ["03"] },
+              { type: "callout", tone: "success", text: ["DELIVER"] },
+              { type: "paragraph", text: ["Ship, measure, and iterate toward the goal."] },
+            ],
+          ],
+        },
+      ];
+    }
+
+    if (mod === 5) {
+      // Comparison: two options evaluated side by side.
+      return [
+        { type: "heading", level: 2, text: [req.outline.title] },
+        {
+          type: "columns",
+          columns: [
+            [
+              { type: "heading", level: 3, text: ["Before"] },
+              { type: "callout", tone: "warn", text: ["LEGACY"] },
+              { type: "bulletList", items: [[FILLER_SENTENCES[seed % FILLER_SENTENCES.length]], [FILLER_SENTENCES[(seed + 1) % FILLER_SENTENCES.length]]] },
+            ],
+            [
+              { type: "heading", level: 3, text: ["After"] },
+              { type: "callout", tone: "success", text: ["CARDECK"] },
+              { type: "bulletList", items: [[FILLER_SENTENCES[(seed + 2) % FILLER_SENTENCES.length]], [FILLER_SENTENCES[(seed + 3) % FILLER_SENTENCES.length]]] },
+            ],
+          ],
+        },
+        { type: "quote", text: [FILLER_SENTENCES[(seed + 4) % FILLER_SENTENCES.length]], attribution: "Carddeck" },
+      ];
+    }
+
+    // Default Pillars & Quote
     return [
       { type: "heading", level: 2, text: [req.outline.title] },
       { type: "paragraph", text: [FILLER_SENTENCES[seed % FILLER_SENTENCES.length]] },
@@ -109,6 +257,11 @@ export class StubProvider implements AIProvider {
           [FILLER_SENTENCES[(seed + 2) % FILLER_SENTENCES.length]],
           [FILLER_SENTENCES[(seed + 3) % FILLER_SENTENCES.length]],
         ],
+      },
+      {
+        type: "quote",
+        text: [FILLER_SENTENCES[(seed + 4) % FILLER_SENTENCES.length]],
+        attribution: "Carddeck Leadership Council",
       },
     ];
   }

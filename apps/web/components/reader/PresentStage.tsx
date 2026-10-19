@@ -33,6 +33,8 @@ export function PresentStage({ deckTitle, cards, theme, motion, onExit }: Presen
   const indexRef = useRef(index);
   indexRef.current = index;
   const total = cards.length;
+  const frameRef = useRef<HTMLDivElement>(null);
+  const scalerRef = useRef<HTMLDivElement>(null);
 
   const goTo = useCallback(
     (next: number) => {
@@ -62,6 +64,52 @@ export function PresentStage({ deckTitle, cards, theme, motion, onExit }: Presen
     return () => window.removeEventListener("keydown", onKey);
   }, [goTo, total, onExit]);
 
+  /**
+   * Scale the slide to fit the 16:9 stage.
+   *
+   * Cards are authored as flowing documents, so a tall slide (four cards, a
+   * long policy list) used to clip at the bottom in present mode. Measure the
+   * card's natural height, widen its layout box by 1/scale, then scale it
+   * back down — the whole slide stays visible and the design keeps its
+   * proportions. The width/scale loop converges in two or three passes.
+   */
+  useEffect(() => {
+    const frame = frameRef.current;
+    const scaler = scalerRef.current;
+    if (!frame || !scaler) return;
+    let cancelled = false;
+
+    const fit = () => {
+      if (cancelled) return;
+      const rect = frame.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+
+      // Keep the card's layout width equal to the frame so text reflows at the
+      // designed width; only the *visual* size changes. This avoids the
+      // non-monotonic height oscillation that widening the box caused.
+      scaler.style.width = `${rect.width}px`;
+      const natural = scaler.scrollHeight;
+      const scale = natural > 0 ? Math.min(1, rect.height / natural) : 1;
+      scaler.style.setProperty("--slide-scale", String(scale));
+    };
+
+    fit();
+    // Web fonts change metrics after first paint; re-fit when they land.
+    document.fonts?.ready.then(fit).catch(() => undefined);
+
+    let observer: ResizeObserver | undefined;
+    if (typeof ResizeObserver !== "undefined") {
+      observer = new ResizeObserver(fit);
+      observer.observe(frame);
+    }
+    window.addEventListener("resize", fit);
+    return () => {
+      cancelled = true;
+      observer?.disconnect();
+      window.removeEventListener("resize", fit);
+    };
+  }, [index, total]);
+
   if (total === 0) {
     return (
       <main className="present" style={deckCssVars(theme)}>
@@ -82,14 +130,18 @@ export function PresentStage({ deckTitle, cards, theme, motion, onExit }: Presen
       </ReaderChrome>
 
       <div className="present-stage">
-        {/* key on the card id: every slide change remounts the card, which
-            replays that slide's entrance animations from the plan. */}
-        <ReaderCard
-          key={card.id}
-          card={card}
-          theme={theme}
-          slideMotion={motion?.slides[index] ?? null}
-        />
+        <div className="present-frame" ref={frameRef}>
+          <div className="present-scale" ref={scalerRef}>
+            {/* key on the card id: every slide change remounts the card, which
+                replays that slide's entrance animations from the plan. */}
+            <ReaderCard
+              key={card.id}
+              card={card}
+              theme={theme}
+              slideMotion={motion?.slides[index] ?? null}
+            />
+          </div>
+        </div>
       </div>
 
       <footer className="present-footer">

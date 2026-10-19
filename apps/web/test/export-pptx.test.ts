@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import JSZip from "jszip";
+import { chromium } from "playwright";
+import { isPptagentAvailable } from "@carddeck/pptx";
 import {
   freshDb,
   seedUser,
@@ -14,6 +16,23 @@ import { PRESET_THEMES } from "@carddeck/core";
 const params = (id: string) => ({ params: Promise.resolve({ id }) });
 
 const theme = PRESET_THEMES[0];
+
+/**
+ * The HTML-engine export needs the vendored PPTAgent converter, its node deps,
+ * and a real chromium. Probe all three before the tests are declared so a
+ * machine without them skips instead of failing.
+ */
+const pptagentAvailable =
+  isPptagentAvailable() &&
+  (await (async () => {
+    try {
+      const browser = await chromium.launch();
+      await browser.close();
+      return true;
+    } catch {
+      return false;
+    }
+  })());
 
 /** Seed a deck (public or private) with two ready cards; returns ids. */
 async function seedExportDeck(opts: {
@@ -106,6 +125,53 @@ describe("GET /api/deck/[id]/export/pptx", () => {
     const { GET } = await import("@/app/api/deck/[id]/export/pptx/route");
     const res = await GET(jsonRequest("http://t/x/nope", "GET"), params("nope"));
     expect(res.status).toBe(404);
+  });
+});
+
+describe("GET /api/deck/[id]/export/pptx with the PPTAgent engine", () => {
+  beforeEach(() => freshDb());
+
+  it.skipIf(!pptagentAvailable)(
+    "converts the designed HTML slides into native PowerPoint shapes",
+    async () => {
+      const { userId, deckId } = await seedExportDeck({ isPublic: 0, shareSlug: null });
+      const { useSession } = await import("./helpers/route");
+      useSession(userId);
+
+      const { GET } = await import("@/app/api/deck/[id]/export/pptx/route");
+      const res = await GET(
+        jsonRequest(`http://t/x/${deckId}?engine=pptagent`, "GET"),
+        params(deckId),
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("x-carddeck-engine")).toBe("pptagent");
+      expect(res.headers.get("content-disposition")).toContain("Launch-Plan-PPTAgent.pptx");
+
+      const buf = Buffer.from(await res.arrayBuffer());
+      const zip = await JSZip.loadAsync(buf);
+      const slides = Object.keys(zip.files).filter((name) =>
+        /^ppt\/slides\/slide\d+\.xml$/.test(name),
+      );
+      expect(slides).toHaveLength(2);
+      const slide1 = (await zip.file("ppt/slides/slide1.xml")!.async("string")) as string;
+      expect(slide1).toContain("<a:t>Overview content</a:t>");
+    },
+    120_000,
+  );
+
+  it("falls back to the native engine for an unknown engine value", async () => {
+    const { userId, deckId } = await seedExportDeck({ isPublic: 0, shareSlug: null });
+    const { useSession } = await import("./helpers/route");
+    useSession(userId);
+
+    const { GET } = await import("@/app/api/deck/[id]/export/pptx/route");
+    const res = await GET(
+      jsonRequest(`http://t/x/${deckId}?engine=bogus`, "GET"),
+      params(deckId),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("x-carddeck-engine")).toBe("native");
   });
 });
 

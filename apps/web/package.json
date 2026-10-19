@@ -12,14 +12,16 @@
   "dependencies": {
     "@carddeck/ai": "*",
     "@carddeck/core": "*",
+    "@carddeck/pptx": "*",
+    "@fontsource/inter": "^5.3.0",
+    "@fontsource/space-grotesk": "^5.3.0",
     "@node-rs/argon2": "^2.2.2",
     "better-sqlite3": "^13.0.3",
     "drizzle-orm": "^0.36.0",
     "next": "^15.1.0",
+    "playwright": "^1.64.1",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "@carddeck/pptx": "*",
-    "playwright": "^1.64.1"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.2",

@@ -21,8 +21,10 @@ describe("block renderers", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Big Idea" })).toBeTruthy();
     // The theme arrives as CSS custom properties on the block wrapper, so the
     // deck re-skins by swapping vars — no per-block style logic.
+    // The theme's family still leads the stack, but a generic fallback is
+    // appended so a missing font degrades to sans-serif, never Times.
     expect((container.firstElementChild as HTMLElement).style.getPropertyValue("--font-display")).toBe(
-      theme.fonts.display,
+      `${theme.fonts.display}, ui-sans-serif, system-ui, sans-serif`,
     );
   });
 
@@ -93,6 +95,25 @@ describe("block renderers", () => {
     expect(container.querySelector("[data-block=divider]")).toBeTruthy();
     expect(container.querySelector(".callout-warn")).toBeTruthy();
     expect(container.querySelector("[data-block=image]")).toBeTruthy();
+  });
+
+  it("keeps a caption out of the image alt so it is not announced twice", () => {
+    const { container } = render(
+      <>
+        <BlockRenderer
+          block={{ type: "image", src: "/x.png", layout: "full", caption: "A chart" }}
+          theme={theme}
+        />
+        <BlockRenderer block={{ type: "image", src: "/y.png", layout: "full" }} theme={theme} />
+      </>,
+    );
+    const [captioned, bare] = [...container.querySelectorAll("img")];
+    // The visible <figcaption> is already the figure's accessible description,
+    // so the image itself is decorative; a duplicated alt reads the line twice.
+    expect(captioned.getAttribute("alt")).toBe("");
+    expect(captioned.closest("figure")!.querySelector("figcaption")!.textContent).toBe("A chart");
+    // With no caption there is no text to attach, so the image stays decorative.
+    expect(bare.getAttribute("alt")).toBe("");
   });
 });
 

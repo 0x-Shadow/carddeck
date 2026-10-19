@@ -165,33 +165,43 @@ Every tool answers with a single text item carrying a JSON envelope:
 
 | Tool | Input | Output |
 | --- | --- | --- |
+| `create_gamma_deck` | `prompt` (required), `numCards` (1–30, default 6), `theme` (default 'Cyberpunk'), `motion` (default '3d'), `format`, `exportFormat` (`pptx`\|`pdf`\|`potx`), `outDir` | `{ deckId, url, status, theme, motion, cards: [{ id, title }], exportPath? }`. Generates extraordinary Gamma-style cards with KPI stats, charts, curated online imagery, and 3D motion, with optional direct export. |
 | `create_deck` | `prompt` (required), `numCards` (1–30, default 8), `format` (`presentation`\|`document`), `tone`, `theme`, `motion` | `{ deckId, url, status, cards: [{ id, title }] }`. Enqueues outline + cards and waits up to 120 s. |
-| `create_deck_from_cards` | `title`, `cards: [{ title, content? }]` (each content line → a paragraph block), `theme?`, `motion?` | `{ deckId, url, status: "ready", cards }`. Instant — no AI, no worker. |
-| `add_cards` | `deckId`, `cards: [{ title, content? }]` | `{ deckId, url, added: [{ id, title, status }] }`. Cards with content are `ready`; without content they're empty outline cards (`pending`). |
+| `create_deck_from_cards` | `title`, `cards: [{ title, content?, blocks? }]` (`blocks` = rich Gamma blocks; `content` lines → paragraphs), `theme?`, `motion?` | `{ deckId, url, status: "ready", cards }`. Instant — no AI, no worker. |
+| `add_cards` | `deckId`, `cards: [{ title, content?, blocks? }]` | `{ deckId, url, added: [{ id, title, status }] }`. Cards with content or blocks are `ready`; without either they're empty outline cards (`pending`). |
 | `get_deck` | `deckId` | Full deck: `{ deckId, title, format, status, url, isPublic, shareSlug, theme, motion, cards: [{ id, title, status, blocks }] }`. |
 | `list_decks` | — | `{ decks: [{ deckId, title, status, cardCount, updatedAt }] }`, newest first. |
-| `set_theme` | `deckId`, `theme` (preset name or id) | `{ deckId, theme: { id, name } }`. Presets: Light, Dark, Midnight, Sunset, Forest, Mono, Paper, Neon. |
-| `set_motion` | `deckId`, `preset` (`none`\|`subtle`\|`punchy`\|`cinematic`) | `{ deckId, preset, slides }`. The plan drives web present mode **and** the animations embedded in `.pptx` exports. |
+| `set_theme` | `deckId`, `theme` (preset name or id) | `{ deckId, theme: { id, name } }`. Presets: Cyberpunk, Aurora, Luxe, Minimal, Light, Dark, Midnight, Sunset, Forest, Mono, Paper, Neon. |
+| `set_motion` | `deckId`, `preset` (`none`\|`subtle`\|`punchy`\|`cinematic`\|`3d`) | `{ deckId, preset, slides }`. The plan drives web present mode (with 3D depth and perspective) **and** the animations embedded in `.pptx` exports. |
 | `add_image` | `deckId`, `source: { url }` or `{ path }`, `cardId?` (default first card), `caption?`, `layout?` (`full`\|`side`\|`behind`) | `{ deckId, cardId, assetId, url, bytes, block }`. Copies the image into `DATA_DIR/assets` (max 10 MB; png/jpeg/webp/gif) and appends an image block. |
-| `export_deck` | `deckId`, `format` (`pptx`\|`pdf`\|`potx`), `outDir?` (default `<DATA_DIR>/exports`) | `{ deckId, format, path, bytes }` — `path` is absolute. |
+| `export_deck` | `deckId`, `format` (`pptx`\|`pdf`\|`potx`), `engine?` (`native`\|`pptagent`, default `native`), `outDir?` (default `<DATA_DIR>/exports`) | `{ deckId, format, engine, path, bytes }` — `path` is absolute. |
 
 Notes:
 
-- `create_deck` needs the worker. If generation outlives the 120 s deadline the
-  tool still succeeds with `status: "generating"` and a note — the deck keeps
-  building; call `get_deck` again shortly.
+- `create_gamma_deck` is the recommended one-shot superpower for agents wanting
+  an extraordinary, Gamma-grade slide deck. It automatically combines curated
+  online imagery, KPI metric columns, data charts, and 3D motion.
+- `create_deck` and `create_gamma_deck` can run queued jobs inside the MCP
+  process while they wait, so a standalone agent finishes a deck even when the
+  separate worker is not running. A running worker is still supported (queue
+  claims are atomic). If generation outlives the 120 s deadline the tool still
+  succeeds with `status: "generating"` and a note — call `get_deck` again shortly.
+- `create_deck_from_cards` and `add_cards` accept rich `blocks` for
+  agent-authored layouts: headings, paragraphs, lists, images, quotes,
+  dividers, nested columns, callouts, and bar/line/donut charts. Invalid
+  blocks are rejected by the same validator used by the editor and model
+  output instead of being written to the deck.
 - Decks created over MCP are **shared read-only by default**: `url` is a
   `/view/<slug>` link anyone on the instance can open (the agent account
   itself cannot log a browser in). Unguessable 16-hex-char slug.
-- `motion` matters most for PowerPoint: `.pptx` exports carry real entrance
-  animations and transitions (subtle fades, punchy pushes/wipes, cinematic
-  covers with slower timing). Embedded pictures get a staggered zoom entrance;
-  slides remain click-advance. This is 2.5D picture motion, not an interactive
-  PowerPoint 3D model. Set `CARDDECK_MOTION=off` to strip animations.
-- Charts in `.pptx` exports render as readable data summaries; images embed as
-  real pictures. GIFs display as animated images in web readers where the
-  browser supports animation; PowerPoint compatibility varies by viewer and
-  some viewers may show only the first frame.
+- `motion` drives both web presentation mode and PowerPoint: `.pptx` exports
+  carry real entrance animations and transitions (3D-preset depth in the web
+  player, plus split/cover/wipe/push/fade transitions and staggered zooms,
+  fly-ins, and wipes in PowerPoint). Embedded pictures get a staggered zoom
+  entrance; slides remain click-advance. Set `CARDDECK_MOTION=off` to strip animations.
+- Charts in `.pptx` exports are native PowerPoint charts with editable data and
+  branded styling; images embed as real pictures. PDF exports render the same
+  charts as SVG.
 - Relative `source.path` values resolve from the repo root (the wrapper pins
   the working directory); absolute paths are clearer.
 
@@ -269,7 +279,7 @@ MCP server with `DATA_DIR=./data`.
 | --- | --- |
 | `create_deck` returns `status: "generating"` + note | The worker isn't running. `npm run dev` (or `docker compose up -d`), then `get_deck` again. |
 | `deck not found` | Deck ids must exist in the Carddeck instance this server points at (`DATA_DIR`); ids come from `create_deck*`/`list_decks` or from the web app. |
-| `unknown theme: …` | Use a preset name (Light, Dark, Midnight, Sunset, Forest, Mono, Paper, Neon) or a theme id from `get_deck`. |
+| `unknown theme: …` | Use a preset name (Cyberpunk, Aurora, Luxe, Minimal, Light, Dark, Midnight, Sunset, Forest, Mono, Paper, Neon) or a theme id from `get_deck`. |
 | PDF export fails with "Run 'npx playwright install chromium'" | One-time Chromium install (not needed in Docker). |
 | `unsupported image type` / `image too large` | png, jpeg, webp, or gif, max 10 MB; URLs must be reachable within 5 s. |
 | Agent connected but no tools | Check the command path is absolute and the wrapper is executable (`chmod +x`). Run the wrapper in a terminal — it should print `[carddeck-mcp] ready on stdio` to stderr and then wait. |

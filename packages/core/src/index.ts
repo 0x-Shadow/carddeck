@@ -3,3 +3,4 @@ export * from "./serialize";
 export * from "./theme";
 export * from "./outline";
 export * from "./motion";
+export * from "./curated-images";

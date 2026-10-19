@@ -15,7 +15,12 @@ export function ImageBlock({ block, theme }: { block: Image; theme?: Theme }) {
       style={blockStyle(theme)}
     >
       {block.src ? (
-        <img src={block.src} alt={block.caption ?? ""} />
+        // When a caption is present it becomes the visible <figcaption>, which
+        // is already the figure's accessible description — repeating it in
+        // `alt` makes a screen reader announce the same line twice. Mark the
+        // image decorative in that case. With no caption the image has no
+        // text alternative at all, so it stays decorative there too.
+        <img src={block.src} alt="" />
       ) : (
         <div className="image-placeholder" role="img" aria-label={block.caption ?? "Image"}>
           Image

@@ -132,7 +132,16 @@ function fetchRemoteImage(src: string, address: string): Promise<ResolvedImage |
           headers: { accept: "image/png,image/jpeg,image/webp,image/gif" },
           agent: false,
           servername: isIP(url.hostname) ? undefined : url.hostname,
-          lookup: (_hostname, _options, callback) => callback(null, pinnedAddress, 4),
+          // Node 22+ may request an address list (Happy Eyeballs). Returning a
+          // bare string then fails with ERR_INVALID_IP_ADDRESS, so honor
+          // `options.all` while still pinning the validated IPv4.
+          lookup: (_hostname, options, callback) => {
+            if (options && (options as { all?: boolean }).all) {
+              callback(null, [{ address: pinnedAddress, family: 4 }]);
+              return;
+            }
+            callback(null, pinnedAddress, 4);
+          },
         }, (res) => {
           const status = res.statusCode ?? 0;
           const location = res.headers.location;

@@ -17,16 +17,22 @@ export function outlineUser(req: OutlineRequest): string {
 /** System prompt for single-card content generation: a JSON array of blocks. */
 export function cardSystem(): string {
   return [
-    "You are a slide content writer.",
-    "Return ONLY a JSON array of block objects.",
-    "Valid block types: heading, paragraph, bulletList, numberedList, image, quote, divider, columns, callout, chart.",
-    "No prose, no markdown fences.",
+    "You are an extraordinary Gamma-grade presentation designer.",
+    "Return ONLY a JSON array of block objects (or an object with a 'blocks' array).",
+    "Valid block types: heading (level 1-3), paragraph, bulletList, numberedList, image (src, layout: full|side|behind, caption), quote (text, attribution), divider, columns (nested block columns), callout (tone: info|warn|success), chart (kind: bar|line|donut, data: {labels, series: [{name, values}]}).",
+    "Design high-impact slides like Gamma.app:",
+    "- Cover cards: Title (level 1), compelling subtitle, and an image (layout 'behind' or 'side' with an unsplash url).",
+    "- KPI/Metrics cards: 'columns' block with 2-3 stats (e.g., heading level 3 for the big metric like '+148%' or '$24M', callout badge, concise paragraph).",
+    "- Data cards: 'chart' block with realistic data series paired with key insight callouts.",
+    "- Multi-pillar/feature cards: 'columns' block with 2-3 columns.",
+    "- Executive insights: 'quote' block with attribution and 'callout' summary.",
+    "No markdown fences, no conversational prose, return pure JSON.",
   ].join(" ");
 }
 
 export function cardUser(req: CardRequest): string {
   const outlineList = req.context.map((c) => `- ${c.title}`).join("\n");
-  return `Theme: ${req.themeName}. Format: ${req.format}.\nFull outline:\n${outlineList}\n\nWrite the content blocks for the card titled "${req.outline.title}" (intent: ${req.outline.intent || "general"}).`;
+  return `Theme: ${req.themeName}. Format: ${req.format}.\nFull outline:\n${outlineList}\n\nCreate extraordinary, professional Gamma-style presentation blocks for card titled "${req.outline.title}" (intent: ${req.outline.intent || "general"}).`;
 }
 
 /** System prompt for revision: a JSON object with blocks (+ optional note). */

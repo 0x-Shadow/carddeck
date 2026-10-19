@@ -12,8 +12,10 @@
   },
   "dependencies": {
     "@carddeck/core": "*",
+    "fast-glob": "^3.3.3",
     "html2pptx": "^0.0.5",
     "jszip": "^3.10.2",
+    "minimist": "^1.2.8",
     "pptxgenjs": "^4.0.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

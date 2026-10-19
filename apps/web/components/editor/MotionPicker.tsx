@@ -8,6 +8,7 @@ const PRESETS: Array<{ value: MotionPreset; label: string }> = [
   { value: "subtle", label: "Subtle" },
   { value: "punchy", label: "Punchy" },
   { value: "cinematic", label: "Cinematic" },
+  { value: "3d", label: "3D Motion" },
 ];
 
 interface MotionPickerProps {

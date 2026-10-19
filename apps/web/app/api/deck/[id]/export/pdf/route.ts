@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { chromium } from "playwright";
-import { renderPrintHtml, type PrintFormat } from "@carddeck/pptx";
+import {
+  renderDesignedPrintHtml,
+  renderPrintHtml,
+  type PrintFormat,
+} from "@carddeck/pptx";
 import { loadExportableDeck, exportFilename } from "../load";
 import { createImageResolver } from "@/lib/export-slides";
 
@@ -9,10 +13,10 @@ type Params = { params: Promise<{ id: string }> };
 /**
  * GET /api/deck/[id]/export/pdf -> .pdf attachment
  *
- * Prints the themed deck with headless Chromium's print-to-PDF. The slide
- * HTML comes from `renderPrintHtml` (CSS paged media), so presentation decks
- * land as one exact 16:9 page per card and document decks flow on A4 — the
- * same renderer the .pptx export uses, so both formats agree on layout.
+ * Prints the themed deck with headless Chromium's print-to-PDF. Presentation
+ * decks use `renderDesignedPrintHtml` (fixed 16:9 pages with card grids, real
+ * charts, and cover photography), while document decks flow on A4 through
+ * `renderPrintHtml`.
  *
  * Access matches the other exporters (owner or share-link holder via
  * `loadExportableDeck`). If Chromium isn't installed we fail with 503 and a
@@ -37,16 +41,20 @@ export async function GET(_req: Request, { params }: Params) {
 
   try {
     const page = await browser.newPage();
-    const html = await renderPrintHtml(
-      { title, theme },
-      cards,
-      {
-        format: (format === "document" ? "document" : "presentation") as PrintFormat,
-        // The print browser has no session and no base URL: images inline as
-        // data URLs so private decks and remote pictures both survive.
-        resolveImage: createImageResolver(id),
-      },
-    );
+    const resolver = createImageResolver(id);
+    const html =
+      format === "document"
+        ? await renderPrintHtml(
+            { title, theme },
+            cards,
+            {
+              format: "document" as PrintFormat,
+              // The print browser has no session and no base URL: images inline as
+              // data URLs so private decks and remote pictures both survive.
+              resolveImage: resolver,
+            },
+          )
+        : await renderDesignedPrintHtml({ title, theme }, cards, { resolveImage: resolver });
     await page.setContent(html, { waitUntil: "load" });
     const buffer = await page.pdf({
       printBackground: true,

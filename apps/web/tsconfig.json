@@ -17,6 +17,7 @@
     ]
   },
   "include": [
+    ".next/types/**/*.ts",
     "app",
     "components",
     "drizzle",
@@ -24,7 +25,7 @@
     "next-env.d.ts",
     "src",
     "test",
-    ".next/types/**/*.ts"
+    ".next-qa/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

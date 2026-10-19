@@ -86,6 +86,8 @@ function renderBlockHtml(
   const ink = hex(theme.colors.ink);
   const muted = hex(theme.colors.muted);
   const accent = hex(theme.colors.accent);
+  const page = hex(theme.colors.page);
+  const surface = hex(theme.colors.surface);
   const display = theme.fonts.display;
   const body = theme.fonts.body;
 
@@ -134,14 +136,18 @@ function renderBlockHtml(
         )
         .join("");
     case "chart": {
-      const lines = [
-        `${block.kind.toUpperCase()} chart`,
-        block.data.labels.map((l, i) => {
-          const vals = block.data.series.map((s) => s.values[i]);
-          return `${l}: ${vals.join(" / ")}`;
-        }),
-      ];
-      return `<p style="font-family:${body};font-size:${FONT_SIZE.small};color:#${muted};margin:0 0 8pt 0;">${esc(lines.join(" | "))}</p>`;
+      const seriesNames = block.data.series.map((s) => s.name).join(" vs ");
+      const allVals = block.data.series.flatMap((s) => s.values);
+      const maxVal = Math.max(1, ...allVals);
+      const rows = block.data.labels.map((l, i) => {
+        const valRuns = block.data.series.map((s) => {
+          const val = s.values[i] ?? 0;
+          const pct = Math.round((val / maxVal) * 100);
+          return `${esc(s.name)}: <b>${val}</b> (${pct}%)`;
+        });
+        return `• <b>${esc(l)}</b>: ${valRuns.join(" | ")}`;
+      });
+      return `<div style="border:1px solid #${accent};background-color:#${page};padding:8pt 12pt;margin:0 0 10pt 0;border-radius:6px;"><p style="font-family:${display};font-size:${FONT_SIZE.small};font-weight:bold;color:#${accent};margin:0 0 4pt 0;">◈ ${esc(block.kind.toUpperCase())} ANALYSIS: ${esc(seriesNames)}</p><p style="font-family:${body};font-size:${FONT_SIZE.small};color:#${ink};line-height:1.4;margin:0;">${rows.join("<br/>")}</p></div>`;
     }
     default: {
       // Exhaustiveness guard: a new block type without a renderer fails here.

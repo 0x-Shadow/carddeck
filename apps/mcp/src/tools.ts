@@ -5,11 +5,12 @@ import { desc, eq, inArray, count } from "drizzle-orm";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
-  buildPptxBuffer,
+  buildDesignedPptxBuffer,
+  buildPptagentPptxBuffer,
   buildThemePotxBuffer,
-  collectSlideImages,
+  isPptagentAvailable,
+  renderDesignedPrintHtml,
   renderPrintHtml,
-  renderSlidesHtml,
   type PrintFormat,
 } from "@carddeck/pptx";
 import {
@@ -19,6 +20,7 @@ import {
   type MotionPreset,
   type SlideMotion,
 } from "@carddeck/core";
+import { validateBlocks } from "@carddeck/ai";
 import { getDb, resolveDataDir } from "../../web/lib/db";
 import * as t from "../../web/drizzle/schema";
 import { enqueueJob } from "../../web/lib/queue";
@@ -38,6 +40,7 @@ import {
 import { seedPresetThemes } from "../../web/lib/themes-presets";
 import { ensureAgentUser } from "./agent-user";
 import { DEFAULT_WAIT_TIMEOUT_MS, waitForDeckStatus, type WaitOptions } from "./wait";
+import { runOnce } from "../../worker/src/pipeline";
 
 /**
  * The Carddeck MCP tool surface.
@@ -56,9 +59,15 @@ import { DEFAULT_WAIT_TIMEOUT_MS, waitForDeckStatus, type WaitOptions } from "./
 // ── shared constants ────────────────────────────────────────────────────────
 
 const FORMATS = ["presentation", "document"] as const;
-const MOTION_PRESETS = ["none", "subtle", "punchy", "cinematic"] as const;
+const MOTION_PRESETS = ["none", "subtle", "punchy", "cinematic", "3d"] as const;
 const LAYOUTS = ["full", "side", "behind"] as const;
 const EXPORT_FORMATS = ["pptx", "pdf", "potx"] as const;
+/**
+ * PPTX rendering engines. `native` is the PptxGenJS designed renderer (editable
+ * charts + motion). `pptagent` renders the designed 1280×720 HTML slides
+ * through the vendored PPTAgent html2pptx converter (HTML-faithful shapes).
+ */
+const EXPORT_ENGINES = ["native", "pptagent"] as const;
 const MAX_CARDS = 30;
 const MAX_PROMPT_CHARS = 4000;
 const MAX_TONE_CHARS = 200;
@@ -136,6 +145,16 @@ function contentBlocks(content?: readonly string[]): Block[] {
 }
 
 /**
+ * Resolve the blocks for an agent-supplied card. Rich `blocks` win when
+ * present and are normalized by the same validator the model output and web
+ * editor use; otherwise `content` lines become paragraphs.
+ */
+function cardBlocks(card: { content?: readonly string[]; blocks?: unknown[] }): Block[] {
+  if (card.blocks && card.blocks.length > 0) return validateBlocks(card.blocks);
+  return contentBlocks(card.content);
+}
+
+/**
  * Read-only share link for a deck, or null when it is private.
  *
  * MCP decks are owned by a headless account, so the owner-only editor path
@@ -161,14 +180,23 @@ async function resolveThemeId(nameOrId?: string): Promise<string> {
   await seedPresetThemes();
   const db = getDb();
   if (nameOrId) {
+    const target = nameOrId.trim();
     const byId = await db.query.theme.findFirst({
-      where: (th, { eq }) => eq(th.id, nameOrId),
+      where: (th, { eq }) => eq(th.id, target),
     });
     if (byId) return byId.id;
     const byName = await db.query.theme.findFirst({
-      where: (th, { eq }) => eq(th.name, nameOrId),
+      where: (th, { eq }) => eq(th.name, target),
     });
     if (byName) return byName.id;
+    // Flexible case-insensitive fallback
+    const all = await db.query.theme.findMany();
+    const matched = all.find(
+      (th) =>
+        th.id.toLowerCase() === target.toLowerCase() ||
+        th.name.toLowerCase() === target.toLowerCase(),
+    );
+    if (matched) return matched.id;
     throw new Error(`unknown theme: ${nameOrId}`);
   }
   const preset = await db.query.theme.findFirst({
@@ -232,6 +260,12 @@ const cardInput = z.object({
     .array(z.string())
     .optional()
     .describe("Content lines; each becomes a paragraph block (omit for an empty outline card)"),
+  blocks: z
+    .array(z.record(z.string(), z.unknown()))
+    .optional()
+    .describe(
+      "Rich Gamma-style blocks (heading, paragraph, list, image, quote, divider, columns, callout, chart). When present, they replace `content`.",
+    ),
 });
 
 const motionField = z.enum(MOTION_PRESETS).optional().describe("Animation preset");
@@ -283,7 +317,112 @@ const exportDeckSchema = z.object({
   deckId: z.string().describe("Deck id"),
   format: z.enum(EXPORT_FORMATS).describe("Export format: pptx, pdf, or potx"),
   outDir: z.string().optional().describe("Output directory (default: <DATA_DIR>/exports)"),
+  engine: z
+    .enum(EXPORT_ENGINES)
+    .optional()
+    .describe(
+      "PPTX rendering engine (default: native). 'native' = PptxGenJS designed renderer with editable charts and motion; 'pptagent' = PPTAgent HTML→PPTX converter for HTML-faithful editable shapes (charts rasterize).",
+    ),
 });
+
+const createGammaDeckSchema = z.object({
+  prompt: z.string().min(1).max(MAX_PROMPT_CHARS).describe("Topic and instructions for the presentation"),
+  numCards: z.number().int().min(1).max(MAX_CARDS).optional().describe("Number of cards (default 6)"),
+  theme: z.string().optional().describe("Theme name or id (e.g. 'Cyberpunk', 'Aurora', 'Luxe', 'Midnight', 'Neon', 'Sunset', 'Minimal')"),
+  motion: motionField.describe("Animation preset (default: '3d')"),
+  format: z.enum(FORMATS).optional().describe("Slide format (default presentation)"),
+  tone: z.string().max(MAX_TONE_CHARS).optional().describe("Writing tone"),
+  exportFormat: z.enum(EXPORT_FORMATS).optional().describe("Export format: pptx, pdf, or potx (optional; renders file to disk)"),
+  exportEngine: z
+    .enum(EXPORT_ENGINES)
+    .optional()
+    .describe(
+      "PPTX engine for exportFormat: 'native' (default, editable charts + motion) or 'pptagent' (HTML→PPTX converter, HTML-faithful shapes)",
+    ),
+  outDir: z.string().optional().describe("Output directory for exported file (default: <DATA_DIR>/exports)"),
+});
+
+async function renderDeckExport(
+  deckId: string,
+  format: (typeof EXPORT_FORMATS)[number],
+  outDir?: string,
+  engine: (typeof EXPORT_ENGINES)[number] = "native",
+): Promise<{ path: string; bytes: number; engine: (typeof EXPORT_ENGINES)[number] }> {
+  const data = await loadSlideInputs(deckId);
+  if (!data) throw new Error(`deck not found: ${deckId}`);
+  if (data.cards.length === 0) throw new Error("deck has no ready cards to export");
+
+  const dir = outDir
+    ? path.resolve(outDir)
+    : path.join(resolveDataDir(), "exports");
+  await fs.mkdir(dir, { recursive: true });
+  const usePptagent = format === "pptx" && engine === "pptagent";
+  const outPath = path.join(
+    dir,
+    exportFilename(usePptagent ? `${data.title} (PPTAgent)` : data.title, format),
+  );
+
+  let buffer: Uint8Array;
+  if (usePptagent) {
+    if (!isPptagentAvailable()) {
+      throw new Error(
+        "PPTAgent engine unavailable: the vendored converter or its dependencies (playwright, pptxgenjs, fast-glob, minimist) are missing",
+      );
+    }
+    buffer = await buildPptagentPptxBuffer(
+      { title: data.title, theme: data.theme },
+      data.cards,
+      { resolveImage: createImageResolver(deckId) },
+    );
+  } else if (format === "pptx") {
+    buffer = await buildDesignedPptxBuffer(
+      { id: deckId, title: data.title, theme: data.theme, cards: data.cards },
+      {
+        resolveImage: createImageResolver(deckId),
+        motion: motionForExport(data.motion, data.cards.length),
+        seed: deckId,
+      },
+    );
+  } else if (format === "pdf") {
+    let browser: import("playwright").Browser;
+    try {
+      const { chromium } = await import("playwright");
+      browser = await chromium.launch();
+    } catch (err) {
+      throw new Error(
+        `PDF export unavailable: ${firstLine(err)}. Run 'npx playwright install chromium'.`,
+      );
+    }
+    try {
+      const page = await browser.newPage();
+      const resolver = createImageResolver(deckId);
+      const html =
+        data.format === "document"
+          ? await renderPrintHtml(
+              { title: data.title, theme: data.theme },
+              data.cards,
+              {
+                format: "document" as PrintFormat,
+                resolveImage: resolver,
+              },
+            )
+          : await renderDesignedPrintHtml(
+              { title: data.title, theme: data.theme },
+              data.cards,
+              { resolveImage: resolver },
+            );
+      await page.setContent(html, { waitUntil: "load" });
+      buffer = await page.pdf({ printBackground: true, preferCSSPageSize: true });
+    } finally {
+      await browser.close().catch(() => undefined);
+    }
+  } else {
+    buffer = await buildThemePotxBuffer(data.theme);
+  }
+
+  await fs.writeFile(outPath, buffer);
+  return { path: outPath, bytes: buffer.byteLength, engine: usePptagent ? "pptagent" : "native" };
+}
 
 // ── server ──────────────────────────────────────────────────────────────────
 
@@ -292,6 +431,13 @@ export interface ServerOptions {
   waitTimeoutMs?: number;
   /** Override the poll interval while waiting on the DB. */
   pollMs?: number;
+  /**
+   * Claim and run queued generation jobs inside the MCP process while a tool
+   * waits. On by default so a standalone agent gets a finished deck even when
+   * no separate worker is running; disabling it restores the pure
+   * "enqueue and wait for the external worker" behavior.
+   */
+  selfDrive?: boolean;
 }
 
 /**
@@ -301,6 +447,10 @@ export interface ServerOptions {
  */
 export async function createServer(opts: ServerOptions = {}): Promise<McpServer> {
   const waits: WaitOptions = { timeoutMs: opts.waitTimeoutMs, pollMs: opts.pollMs };
+  const selfDrive = opts.selfDrive ?? true;
+  const driveOnce = async () => {
+    if (selfDrive) await runOnce().catch(() => false);
+  };
   const server = new McpServer({ name: "carddeck", version: "0.1.0" });
 
   server.registerTool(
@@ -348,7 +498,7 @@ export async function createServer(opts: ServerOptions = {}): Promise<McpServer>
       await sleep(5);
       await enqueueJob(deck.id, "cards", { format });
 
-      const settled = await waitForDeckStatus(deck.id, ["ready", "error"], waits);
+      const settled = await waitForDeckStatus(deck.id, ["ready", "error"], waits, driveOnce);
       const cards = await cardsOf(deck.id);
       const cardList = cards.map((c) => ({ id: c.id, title: c.title }));
 
@@ -388,7 +538,7 @@ export async function createServer(opts: ServerOptions = {}): Promise<McpServer>
     {
       title: "Create deck from cards",
       description:
-        "Create a ready-to-present deck from card content you provide — no AI generation, no waiting. Each content line becomes a paragraph block. Returns the deck id and its read-only share link.",
+        "Create a ready-to-present deck from card content you provide — no AI generation, no waiting. Supply rich Gamma-style `blocks` per card, or plain `content` lines that become paragraphs. Returns the deck id and its read-only share link.",
       inputSchema: createDeckFromCardsSchema.shape,
     },
     guarded(async (args: z.infer<typeof createDeckFromCardsSchema>) => {
@@ -416,7 +566,7 @@ export async function createServer(opts: ServerOptions = {}): Promise<McpServer>
             position: i,
             title: card.title,
             intent: i === 0 ? "cover" : i === args.cards.length - 1 ? "close" : "body",
-            blocks: JSON.stringify(contentBlocks(card.content)),
+            blocks: JSON.stringify(cardBlocks(card)),
             status: "ready",
           })),
         )
@@ -466,14 +616,17 @@ export async function createServer(opts: ServerOptions = {}): Promise<McpServer>
       const inserted = await db
         .insert(t.card)
         .values(
-          args.cards.map((card, i) => ({
-            deckId: deck.id,
-            position: nextPosition + i,
-            title: card.title,
-            intent: "body",
-            blocks: JSON.stringify(contentBlocks(card.content)),
-            status: card.content?.length ? "ready" : "pending",
-          })),
+          args.cards.map((card, i) => {
+            const blocks = cardBlocks(card);
+            return {
+              deckId: deck.id,
+              position: nextPosition + i,
+              title: card.title,
+              intent: "body",
+              blocks: JSON.stringify(blocks),
+              status: blocks.length > 0 ? "ready" : "pending",
+            };
+          }),
         )
         .returning({ id: t.card.id, title: t.card.title, status: t.card.status });
 
@@ -739,60 +892,106 @@ export async function createServer(opts: ServerOptions = {}): Promise<McpServer>
       inputSchema: exportDeckSchema.shape,
     },
     guarded(async (args: z.infer<typeof exportDeckSchema>) => {
-      const data = await loadSlideInputs(args.deckId);
-      if (!data) throw new Error(`deck not found: ${args.deckId}`);
-      if (data.cards.length === 0) throw new Error("deck has no ready cards to export");
+      const exported = await renderDeckExport(args.deckId, args.format, args.outDir, args.engine);
+      return envOk({
+        deckId: args.deckId,
+        format: args.format,
+        engine: exported.engine,
+        path: exported.path,
+        bytes: exported.bytes,
+      });
+    }),
+  );
 
-      const dir = args.outDir
-        ? path.resolve(args.outDir)
-        : path.join(resolveDataDir(), "exports");
-      await fs.mkdir(dir, { recursive: true });
-      const outPath = path.join(dir, exportFilename(data.title, args.format));
+  server.registerTool(
+    "create_gamma_deck",
+    {
+      title: "Create Gamma deck",
+      description:
+        "Create an extraordinary, professional presentation like Gamma.app with 3D motion, rich metrics/charts, curated online images, and themes. Optionally exports directly to PPTX or PDF in one shot.",
+      inputSchema: createGammaDeckSchema.shape,
+    },
+    guarded(async (args: z.infer<typeof createGammaDeckSchema>) => {
+      const userId = await ensureAgentUser();
+      const themeId = await resolveThemeId(args.theme ?? "cyberpunk");
+      const format = args.format ?? "presentation";
+      const numCards = args.numCards ?? 6;
+      const motion = args.motion ?? "3d";
+      const db = getDb();
 
-      let buffer: Uint8Array;
-      if (args.format === "pptx") {
-        // Images ride into pptxgenjs as bytes, so the slide HTML omits image
-        // markup (same contract as the web route).
-        const images = data.cards.map((card) => collectSlideImages(card.blocks));
-        const hasImages = images.some((list) => list.length > 0);
-        const slides = await renderSlidesHtml({ title: data.title, theme: data.theme }, data.cards, {
-          imageMode: hasImages ? "omit" : "placeholder",
+      const [deck] = await db
+        .insert(t.deck)
+        .values({
+          userId,
+          title: args.prompt.trim().slice(0, 100),
+          format,
+          themeId,
+          status: "generating",
+          ...shareFields(),
+          motion: JSON.stringify({ preset: motion, slides: [] }),
+        })
+        .returning();
+
+      await enqueueJob(deck.id, "outline", {
+        prompt: args.prompt.trim(),
+        numCards,
+        ...(args.tone ? { tone: args.tone } : {}),
+        format,
+      });
+      await sleep(5);
+      await enqueueJob(deck.id, "cards", { format });
+
+      const settled = await waitForDeckStatus(deck.id, ["ready", "error"], waits, driveOnce);
+      const cards = await cardsOf(deck.id);
+      const cardList = cards.map((c) => ({ id: c.id, title: c.title }));
+
+      if (!settled) {
+        const current = await requireDeck(deck.id);
+        return envOk({
+          deckId: deck.id,
+          url: urlForDeck(current),
+          status: current.status,
+          cards: cardList,
+          note: "generation is still running; make sure the Carddeck worker is up (`npm run dev`), then call get_deck again",
         });
-        buffer = await buildPptxBuffer(slides, {
-          resolveImage: createImageResolver(args.deckId),
-          images,
-          motion: motionForExport(data.motion, slides.length),
+      }
+      if (settled.status === "error") {
+        const failed = await db.query.generationJob.findFirst({
+          where: (j, { and, eq }) => and(eq(j.deckId, deck.id), eq(j.status, "error")),
+          orderBy: (j, { desc }) => desc(j.updatedAt),
         });
-      } else if (args.format === "pdf") {
-        // The import itself can fail (playwright not installed at all), and
-        // that is exactly the case the hint is for — keep both inside the
-        // try so every Chromium-less machine gets the same instruction.
-        let browser: import("playwright").Browser;
-        try {
-          const { chromium } = await import("playwright");
-          browser = await chromium.launch();
-        } catch (err) {
-          throw new Error(
-            `PDF export unavailable: ${firstLine(err)}. Run 'npx playwright install chromium'.`,
-          );
-        }
-        try {
-          const page = await browser.newPage();
-          const html = await renderPrintHtml({ title: data.title, theme: data.theme }, data.cards, {
-            format: (data.format === "document" ? "document" : "presentation") as PrintFormat,
-            resolveImage: createImageResolver(args.deckId),
-          });
-          await page.setContent(html, { waitUntil: "load" });
-          buffer = await page.pdf({ printBackground: true, preferCSSPageSize: true });
-        } finally {
-          await browser.close().catch(() => undefined);
-        }
-      } else {
-        buffer = await buildThemePotxBuffer(data.theme);
+        return envFail(failed?.error ? `generation failed: ${failed.error}` : "generation failed", {
+          deckId: deck.id,
+          url: urlForDeck(deck),
+          status: "error",
+        });
       }
 
-      await fs.writeFile(outPath, buffer);
-      return envOk({ deckId: args.deckId, format: args.format, path: outPath, bytes: buffer.byteLength });
+      let exportResult: { path: string; bytes: number; engine: string } | undefined;
+      if (args.exportFormat) {
+        exportResult = await renderDeckExport(
+          deck.id,
+          args.exportFormat,
+          args.outDir,
+          args.exportEngine,
+        );
+      }
+
+      return envOk({
+        deckId: deck.id,
+        url: urlForDeck(deck),
+        status: "ready",
+        theme: args.theme ?? "Cyberpunk",
+        motion,
+        cards: cardList,
+        ...(exportResult
+          ? {
+              exportPath: exportResult.path,
+              exportBytes: exportResult.bytes,
+              exportEngine: exportResult.engine,
+            }
+          : {}),
+      });
     }),
   );
 

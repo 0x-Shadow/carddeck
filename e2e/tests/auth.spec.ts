@@ -21,8 +21,8 @@ test("landing, register, and dashboard hang together", async ({ page }) => {
 
   // Landed on the dashboard with the empty state.
   await page.waitForURL(/\/dashboard/);
-  await expect(page.getByRole("heading", { name: "Your decks" })).toBeVisible();
-  await expect(page.getByText(/no decks yet/i)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible();
+  await expect(page.getByText(/no projects yet/i)).toBeVisible();
 
   // Sign out returns to the landing page.
   await page.getByRole("button", { name: "Sign out" }).click();

@@ -27,10 +27,23 @@ describe("ExportMenu", () => {
     render(<ExportMenu deckId="d1" deckTitle="Launch Plan" />);
 
     fireEvent.click(screen.getByRole("button", { name: /^export$/i }));
-    const item = await screen.findByRole("menuitem", { name: /powerpoint/i });
+    const item = await screen.findByRole("menuitem", { name: /^powerpoint \(\.pptx\)$/i });
     fireEvent.click(item);
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/deck/d1/export/pptx"));
+  });
+
+  it("offers the HTML engine as a second PPTX option", async () => {
+    render(<ExportMenu deckId="d1" deckTitle="Launch Plan" />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^export$/i }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: /html engine/i }),
+    );
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith("/api/deck/d1/export/pptx?engine=pptagent"),
+    );
   });
 
   it("exports the theme template when that item is chosen", async () => {
@@ -56,7 +69,7 @@ describe("ExportMenu", () => {
     render(<ExportMenu deckId="d1" deckTitle="Deck" />);
 
     fireEvent.click(screen.getByRole("button", { name: /^export$/i }));
-    fireEvent.click(await screen.findByRole("menuitem", { name: /powerpoint/i }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /^powerpoint \(\.pptx\)$/i }));
 
     await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
     expect(fetchMock).toHaveBeenCalledWith("/api/deck/d1/export/pptx");

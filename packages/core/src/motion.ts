@@ -8,7 +8,7 @@
  * the same quality of output for the same deck.
  */
 
-export type MotionPreset = "none" | "subtle" | "punchy" | "cinematic";
+export type MotionPreset = "none" | "subtle" | "punchy" | "cinematic" | "3d";
 export type TransitionKind = "fade" | "push" | "wipe" | "cover" | "split";
 export type EntranceKind = "fade" | "wipeUp" | "flyLeft" | "zoom";
 
@@ -57,6 +57,12 @@ const PRESETS: Record<Exclude<MotionPreset, "none">, PresetSpec> = {
     effects: ["flyLeft", "zoom", "fade"],
     stagger: 450,
     firstDelay: 200,
+  },
+  "3d": {
+    transitions: ["split", "cover", "wipe", "push", "fade"],
+    effects: ["zoom", "flyLeft", "wipeUp", "fade"],
+    stagger: 260,
+    firstDelay: 100,
   },
 };
 
@@ -111,7 +117,7 @@ export function planMotionForDeck(
   return planMotion(preset, { slides: cards.length, shapes }, seed);
 }
 
-const PRESET_VALUES = new Set(["none", "subtle", "punchy", "cinematic"]);
+const PRESET_VALUES = new Set(["none", "subtle", "punchy", "cinematic", "3d"]);
 const TRANSITION_VALUES = new Set(["fade", "push", "wipe", "cover", "split"]);
 const ENTRANCE_VALUES = new Set(["fade", "wipeUp", "flyLeft", "zoom"]);
 

@@ -188,11 +188,18 @@ function normalizeBlock(block: Record<string, unknown>): Block | null {
  * page down.
  */
 export function validateBlocks(raw: unknown): Block[] {
-  if (!Array.isArray(raw)) {
+  let arr = raw;
+  if (arr && typeof arr === "object" && !Array.isArray(arr)) {
+    const obj = arr as Record<string, unknown>;
+    if (Array.isArray(obj.blocks)) arr = obj.blocks;
+    else if (Array.isArray(obj.card)) arr = obj.card;
+    else if (Array.isArray(obj.items)) arr = obj.items;
+  }
+  if (!Array.isArray(arr)) {
     throw new AIValidationError(`blocks must be an array, got ${typeof raw}`);
   }
   const out: Block[] = [];
-  for (const [i, b] of raw.entries()) {
+  for (const [i, b] of arr.entries()) {
     if (!isBlockLike(b)) {
       throw new AIValidationError(`block[${i}] is not a recognized block`);
     }
@@ -202,7 +209,7 @@ export function validateBlocks(raw: unknown): Block[] {
   return out;
 }
 
-const MOTION_PRESETS = new Set(["none", "subtle", "punchy", "cinematic"]);
+const MOTION_PRESETS = new Set(["none", "subtle", "punchy", "cinematic", "3d"]);
 const MOTION_TRANSITIONS = new Set(["fade", "push", "wipe", "cover", "split"]);
 const MOTION_ENTRANCES = new Set(["fade", "wipeUp", "flyLeft", "zoom"]);
 const MAX_MOTION_SLIDE_BUILDS = 12;
