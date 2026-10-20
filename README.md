@@ -11,6 +11,8 @@ API keys out of the box.
 Prompt → editable outline → AI-generated themed deck → refine → Present / Share / Export .pptx
 ```
 
+![Carddeck in present mode](docs/assets/carddeck.gif)
+
 ## Features
 
 - **Prompt → outline → deck.** Describe the deck (format, card count, tone);
