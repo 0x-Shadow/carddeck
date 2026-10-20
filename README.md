@@ -39,8 +39,8 @@ Prompt → editable outline → AI-generated themed deck → refine → Present 
 - **Editable canvas.** Every card edits in place — headings, paragraphs,
   lists, quotes, callouts, images, dividers, columns, and charts — with
   optimistic saves.
-- **Themes.** Twelve presets (Cyberpunk, Aurora, Luxe, Minimal, Light, Dark,
-  Midnight, Sunset, Forest, Mono, Paper, Neon); switch any deck instantly
+- **Themes.** Thirteen presets (Cyberpunk, Aurora, Luxe, Minimal, Light, Dark,
+  Midnight, Sunset, Forest, Mono, Paper, Brief, Neon); switch any deck instantly
   without losing your editing session.
 - **Agent-ready (MCP).** A local [MCP server](docs/MCP.md) lets OpenCode,
   Claude Code, Codex, and any MCP client build decks, add images, set motion,
