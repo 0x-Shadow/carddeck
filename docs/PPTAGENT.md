@@ -95,8 +95,12 @@ unaffected.
 - **No motion.** Animations are a native-engine feature; the HTML engine emits
   a static deck.
 - **Font substitution.** The converter records the fonts Chromium actually
-  used. In containers without the deck's fonts installed, it names the fallback
-  it measured; the native engine keeps the theme's font names instead.
+  used. The vendored copy now preserves the browser environment so metric-
+  compatible Linux substitutes resolve, and maps Gelasio → Georgia and
+  Carlito → Calibri in the PPTX. Decks therefore carry the design font names
+  into PowerPoint. Fonts missing on the viewing machine still substitute just
+  as they would in any PowerPoint file; the native engine keeps the theme's
+  font names directly.
 - **Validation.** Every text node must sit inside `<p>`, `<h1>`–`<h6>`, `<ul>`,
   or `<ol>`. The designed HTML renderer follows this contract; if you add a new
   label, wrap it in an inline `<span>` inside its container.

@@ -31,7 +31,7 @@ container small and the export path deterministic.
 
 The upstream files are CommonJS; this package is ESM, so both were renamed
 `.js` → `.cjs` and the CLI's internal `require("./html2pptx")` was pointed at
-`./html2pptx.cjs`. Three upstream bugs were fixed:
+`./html2pptx.cjs`. Five upstream bugs were fixed:
 
 1. **SVG detection** — `el.tagName === 'SVG'` never matches: SVG elements
    report lower-case `svg`. Inline charts were skipped (only their `<text>`
@@ -42,6 +42,14 @@ The upstream files are CommonJS; this package is ESM, so both were renamed
 3. **Circle radius** — `border-radius: 50%` mapped to a fixed 1 inch, which
    turns circles into rounded rectangles. It now maps to half the shorter side,
    producing true circles and stadiums.
+4. **Font resolution environment** — the converter launched Chromium with only
+   `TMPDIR`, dropping `HOME` and the user fontconfig. Metric-compatible
+   substitutes such as Gelasio and Carlito were invisible, so every run was
+   measured and named `DejaVu Sans`. The launch now merges `process.env`.
+5. **Portable font names** — Chromium records the Linux substitute it measured
+   (Gelasio, Carlito). The converter now maps those to the design families
+   (Georgia, Calibri) in the PPTX, so PowerPoint on macOS/Windows opens the deck
+   with the intended fonts and matching metrics.
 
 Run the integration test in `packages/pptx/test/pptagent.test.ts` after
 changing anything here; it asserts the output contains native `<a:t>` runs and

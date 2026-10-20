@@ -124,6 +124,15 @@ export const PRESET_THEMES: Theme[] = [
     shadow: "0 2px 8px rgba(60,45,20,0.12)",
   },
   {
+    id: "brief",
+    name: "Brief",
+    isPreset: true,
+    fonts: { display: "Georgia", body: "Calibri" },
+    colors: { page: "#f4efe6", surface: "#fbf8f1", ink: "#171a1d", accent: "#8c1d2b", muted: "#5c5750" },
+    radius: "2px",
+    shadow: "none",
+  },
+  {
     id: "neon",
     name: "Neon",
     isPreset: true,

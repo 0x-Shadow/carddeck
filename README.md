@@ -11,7 +11,7 @@ API keys out of the box.
 Prompt → editable outline → AI-generated themed deck → refine → Present / Share / Export .pptx
 ```
 
-![Carddeck in present mode](docs/assets/carddeck.gif)
+![Carddeck presenting an editable AI, Schools, and Human Rights deck](docs/assets/carddeck.gif)
 
 ## Features
 

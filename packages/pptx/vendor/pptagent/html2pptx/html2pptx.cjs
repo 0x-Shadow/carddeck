@@ -729,7 +729,11 @@ async function extractSlideData(page) {
     const extractFontFace = (el, fontFamily) => {
       // Prefer the actual font detected by CDP (CSS.getPlatformFontsForNode)
       const actualFont = el?.getAttribute?.('data-actual-font');
-      if (actualFont) return actualFont;
+      // Metric-compatible Linux substitutes resolve to the font the deck was
+      // designed with, so PowerPoint on macOS/Windows opens with Georgia or
+      // Calibri instead of a Linux-only family.
+      const FONT_ALIASES = { Gelasio: 'Georgia', Carlito: 'Calibri' };
+      if (actualFont) return FONT_ALIASES[actualFont] || actualFont;
 
       // Fallback: parse CSS fontFamily
       if (!fontFamily) return 'Microsoft YaHei';
@@ -2831,7 +2835,7 @@ async function html2pptx(htmlFile, pres, options = {}) {
   const tmpDir = options.tmpDir || fs.mkdtempSync(path.join(os.tmpdir(), 'html2pptx-'));
 
   try {
-    const launchOptions = { env: { TMPDIR: tmpDir }, timeout: TIMEOUT_MS };
+    const launchOptions = { env: { ...process.env, TMPDIR: tmpDir }, timeout: TIMEOUT_MS };
     if (process.platform === 'darwin') {
       launchOptions.channel = 'chrome';
     }
