@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { desc, eq, inArray, count } from "drizzle-orm";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -62,6 +63,24 @@ const EXPORT_FORMATS = ["pptx", "pdf", "potx"] as const;
 const MAX_CARDS = 30;
 const MAX_PROMPT_CHARS = 4000;
 const MAX_TONE_CHARS = 200;
+
+/** Editorial design system: the guide and the runnable starter kit. */
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+const DESIGN_DOC = path.join(REPO_ROOT, "docs", "DESIGN.md");
+const DESIGN_KIT_DIR = path.join(REPO_ROOT, "apps", "mcp", "design", "editorial");
+const DESIGN_LAYOUTS = [
+  "cover",
+  "split",
+  "statement",
+  "band",
+  "fullBleedList",
+  "steps",
+  "cards",
+  "manifesto",
+  "rows",
+  "quote",
+  "close",
+] as const;
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 const firstLine = (err: unknown): string =>
@@ -283,6 +302,20 @@ const exportDeckSchema = z.object({
   deckId: z.string().describe("Deck id"),
   format: z.enum(EXPORT_FORMATS).describe("Export format: pptx, pdf, or potx"),
   outDir: z.string().optional().describe("Output directory (default: <DATA_DIR>/exports)"),
+});
+
+const scaffoldDesignSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(60)
+    .optional()
+    .describe("Project slug, used for the default folder and the deck title"),
+  outDir: z
+    .string()
+    .optional()
+    .describe("Directory to copy the kit into (default: <repo>/work/designs/<name>)"),
 });
 
 // ── server ──────────────────────────────────────────────────────────────────
@@ -793,6 +826,100 @@ export async function createServer(opts: ServerOptions = {}): Promise<McpServer>
 
       await fs.writeFile(outPath, buffer);
       return envOk({ deckId: args.deckId, format: args.format, path: outPath, bytes: buffer.byteLength });
+    }),
+  );
+
+  server.registerTool(
+    "get_design_system",
+    {
+      title: "Get design system",
+      description:
+        "Read the Editorial deck design system before building a deck that must look designed. Returns the full guide (tokens, type scale, eleven layout recipes, photography direction, copy rules, QA gates and anti-patterns) plus the absolute path of the runnable starter kit. Use this instead of letting a PPTX library lay out 32pt titles and 14pt bullets.",
+      inputSchema: {},
+    },
+    guarded(async () => {
+      let guide: string;
+      try {
+        guide = await fs.readFile(DESIGN_DOC, "utf8");
+      } catch {
+        throw new Error(`design guide not found at ${DESIGN_DOC}`);
+      }
+      return envOk({
+        name: "Editorial",
+        summary:
+          "Compose each slide at 1920x1080 in HTML, render it in Chromium at 2x, and place it as a full-bleed image in the PPTX. Keeps speaker notes; slides are not text-editable.",
+        guide,
+        kit: DESIGN_KIT_DIR,
+        layouts: DESIGN_LAYOUTS,
+        starterDeck: path.join(DESIGN_KIT_DIR, "deck.mjs"),
+        renderer: path.join(DESIGN_KIT_DIR, "render.mjs"),
+        run: `node "${path.join(DESIGN_KIT_DIR, "render.mjs")}" "${path.join(DESIGN_KIT_DIR, "deck.mjs")}" --out <dir>`,
+        fonts: {
+          display: "Segoe UI Black (weight 900) — install it or pick another heavy grotesk before composing",
+          body: "Segoe UI",
+          quote: "Georgia italic",
+          mono: "Consolas",
+        },
+        next: "call scaffold_design_kit to copy the kit into a working directory, then edit deck.mjs and run render.mjs",
+      });
+    }),
+  );
+
+  server.registerTool(
+    "scaffold_design_kit",
+    {
+      title: "Scaffold design kit",
+      description:
+        "Copy the Editorial starter kit (theme tokens, eleven layouts, the Chromium/PPTX/PDF renderer, and a full 14-slide example deck) into a working directory. Returns the exact render command. Edit deck.mjs, run render.mjs, review out/preview.jpg, then deliver the .pptx.",
+      inputSchema: scaffoldDesignSchema.shape,
+    },
+    guarded(async (args: z.infer<typeof scaffoldDesignSchema>) => {
+      const slug =
+        (args.name ?? "editorial-deck")
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "")
+          .slice(0, 60) || "editorial-deck";
+      const target = args.outDir
+        ? path.resolve(args.outDir)
+        : path.join(REPO_ROOT, "work", "designs", slug);
+
+      try {
+        await fs.access(path.join(DESIGN_KIT_DIR, "render.mjs"));
+      } catch {
+        throw new Error(`design kit not found at ${DESIGN_KIT_DIR}`);
+      }
+
+      await fs.mkdir(target, { recursive: true });
+      await fs.cp(DESIGN_KIT_DIR, target, {
+        recursive: true,
+        // never copy a previous render or its image cache into a new project
+        filter: (src) => !/[\\/](\.image-cache|out)([\\/]|$)/.test(src),
+      });
+
+      const files = (await fs.readdir(target)).sort();
+      const out = path.join(target, "out");
+      const insideRepo = target === REPO_ROOT || target.startsWith(REPO_ROOT + path.sep);
+
+      return envOk({
+        name: slug,
+        outDir: target,
+        files,
+        command: `node "${path.join(target, "render.mjs")}" "${path.join(target, "deck.mjs")}" --out "${out}"`,
+        outputs: ["slide-NN.png|jpg (2560x1440)", "preview.jpg (contact sheet)", `${slug}.pptx (slides + notes)`, `${slug}.pdf`],
+        ...(insideRepo
+          ? {}
+          : {
+              warning:
+                "This directory is outside the carddeck repo: install playwright (with Chromium) and pptxgenjs there, or move the kit inside the repo so Node can resolve them.",
+            }),
+        next: [
+          "edit deck.mjs: replace the copy, images and slides; keep the ink/bone and photo/type rhythm",
+          "run the command above",
+          "open out/preview.jpg and fix composition before shipping",
+          "deliver out/<title>.pptx (speaker notes are already inside)",
+        ],
+      });
     }),
   );
 

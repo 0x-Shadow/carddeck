@@ -363,4 +363,32 @@ describe("carddeck MCP server", () => {
     expect(badTheme.isError).toBe(true);
     expect(String(badTheme.body.error)).toContain("unknown theme");
   });
+
+  it("serves the Editorial design system and scaffolds a runnable kit", async () => {
+    const client = await connect();
+
+    const system = await call(client, "get_design_system");
+    expect(system.isError).toBe(false);
+    expect(system.body.ok).toBe(true);
+    expect(String(system.body.guide)).toContain("The Editorial deck system");
+    expect(system.body.layouts).toContain("manifesto");
+    const kit = String(system.body.kit);
+    expect(existsSync(path.join(kit, "render.mjs"))).toBe(true);
+    expect(existsSync(path.join(kit, "theme.mjs"))).toBe(true);
+
+    const target = path.join(dataDir, "design-kit");
+    const scaffolded = await call(client, "scaffold_design_kit", {
+      name: "Test Deck",
+      outDir: target,
+    });
+    expect(scaffolded.isError).toBe(false);
+    expect(scaffolded.body.ok).toBe(true);
+    expect(scaffolded.body.name).toBe("test-deck");
+    expect(String(scaffolded.body.command)).toContain("render.mjs");
+    for (const file of ["render.mjs", "deck.mjs", "theme.mjs", "layouts.mjs", "README.md"]) {
+      expect(existsSync(path.join(target, file))).toBe(true);
+    }
+    // a scaffold never drags a previous render along with it
+    expect(existsSync(path.join(target, "out"))).toBe(false);
+  });
 });

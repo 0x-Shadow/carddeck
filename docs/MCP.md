@@ -174,6 +174,8 @@ Every tool answers with a single text item carrying a JSON envelope:
 | `set_motion` | `deckId`, `preset` (`none`\|`subtle`\|`punchy`\|`cinematic`) | `{ deckId, preset, slides }`. The plan drives web present mode **and** the animations embedded in `.pptx` exports. |
 | `add_image` | `deckId`, `source: { url }` or `{ path }`, `cardId?` (default first card), `caption?`, `layout?` (`full`\|`side`\|`behind`) | `{ deckId, cardId, assetId, url, bytes, block }`. Copies the image into `DATA_DIR/assets` (max 10 MB; png/jpeg/webp/gif) and appends an image block. |
 | `export_deck` | `deckId`, `format` (`pptx`\|`pdf`\|`potx`), `outDir?` (default `<DATA_DIR>/exports`) | `{ deckId, format, path, bytes }` — `path` is absolute. |
+| `get_design_system` | — | `{ name, summary, guide, kit, layouts, run, fonts, next }` — the full Editorial design guide as markdown, plus the absolute path of the runnable starter kit. |
+| `scaffold_design_kit` | `name?`, `outDir?` (default `<repo>/work/designs/<name>`) | `{ outDir, files, command, outputs, next }` — copies the kit and returns the exact render command. |
 
 Notes:
 
@@ -194,6 +196,24 @@ Notes:
   some viewers may show only the first frame.
 - Relative `source.path` values resolve from the repo root (the wrapper pins
   the working directory); absolute paths are clearer.
+
+### Designing a deck that looks designed
+
+The block exporter is a document engine: fixed 32pt titles, 14pt body copy, one
+photo box per slide. When the deck has to look art-directed — a keynote, a
+student guide, anything a human will judge by eye — use the Editorial system
+instead:
+
+1. `get_design_system` — read the rules, tokens and eleven layout recipes.
+2. `scaffold_design_kit` — copy the runnable kit into `work/designs/<name>`.
+3. Edit `deck.mjs`, run the returned `render.mjs` command, open
+   `out/preview.jpg` and fix the composition.
+4. Deliver `out/<title>.pptx`: full-bleed slides plus speaker notes.
+
+The kit renders each slide in Chromium at 2560 × 1440 and places it as a
+full-bleed image — the deck looks exactly as designed, but the text is not
+editable in PowerPoint (edit the spec and re-render). Full guide:
+[DESIGN.md](./DESIGN.md).
 
 ## Ask for a deck — examples
 
