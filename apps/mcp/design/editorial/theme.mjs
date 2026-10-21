@@ -49,6 +49,14 @@ body{font-family:"Segoe UI","Inter","Helvetica Neue",Arial,sans-serif;-webkit-fo
 /** Escape text for HTML. */
 export const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
+/**
+ * Escape, then re-allow a tiny set of inline tags (no attributes). Use this
+ * anywhere copy may want emphasis: `esc` first, so nothing but the tag names
+ * below can survive.
+ */
+export const inline = (s) =>
+  esc(s).replace(/&lt;(\/?)(i|b|em|strong|br)\s*\/?&gt;/gi, "<$1$2>");
+
 /** Top-right slide index. */
 export const chrome = (n, total, color = T.ink) =>
   `<div class="top" style="color:${color}"><span></span><span class="idx">${String(n).padStart(2, "0")} — ${total}</span></div>`;
@@ -101,6 +109,6 @@ export const statBlock = (stat, opts = {}) => {
   const tone = opts.tone ?? "bone";
   return `<div style="display:flex;align-items:flex-end;gap:26px;margin-top:${opts.mt ?? 44}px">
     <div class="h1 acc" style="font-size:${opts.size ?? 150}px;line-height:.8">${esc(stat.value)}</div>
-    <div style="font-size:${opts.labelSize ?? 19}px;line-height:1.4;color:${tone === "bone" ? "rgba(11,13,16,.55)" : "rgba(242,238,228,.55)"};padding-bottom:10px">${stat.label}</div>
+    <div style="font-size:${opts.labelSize ?? 19}px;line-height:1.4;color:${tone === "bone" ? "rgba(11,13,16,.55)" : "rgba(242,238,228,.55)"};padding-bottom:10px">${inline(stat.label)}</div>
   </div>`;
 };

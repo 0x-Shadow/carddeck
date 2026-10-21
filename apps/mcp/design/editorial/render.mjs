@@ -45,6 +45,7 @@ for (let i = 0; i < argv.length; i++) {
   if (a === "--no-pdf") flags.pdf = false;
   else if (a === "--out") flags.out = argv[++i];
   else if (a === "--scale") flags.scale = Number(argv[++i]);
+  else if (a === "--allow-local-hosts") flags.allowLocalHosts = true;
   else if (a === "--help" || a === "-h") flags.help = true;
   else positional.push(a);
 }
@@ -52,11 +53,15 @@ for (let i = 0; i < argv.length; i++) {
 if (flags.help) {
   console.log(`Editorial deck renderer
 
-  node render.mjs <deck.mjs> [--out <dir>] [--no-pdf] [--scale 1.3333]
+  node render.mjs <deck.mjs> [--out <dir>] [--no-pdf] [--scale 1.3333] [--allow-local-hosts]
 
 The deck module default-exports:
   { title, author?, footer: { left, right }, images: { name: url|path }, slides: [...] }
 Each slide is { layout, ...props, notes? }. Layouts: ${Object.keys(LAYOUTS).join(", ")}.
+
+Remote images must be public http(s) hosts; loopback, private ranges and
+link-local addresses are refused so a hostile deck spec cannot probe the
+machine or the LAN. Pass --allow-local-hosts for assets on a local server.
 `);
   process.exit(0);
 }
@@ -85,20 +90,86 @@ fs.mkdirSync(outDir, { recursive: true });
 // ── images: remote URLs are cached next to the deck ─────────────────────────
 const cacheDir = path.join(path.dirname(deckPath), ".image-cache");
 const imageUrls = new Map();
+const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
+
+/**
+ * Refuse loopback, RFC1918, link-local and mDNS hosts. The deck spec is
+ * model-written, so a photo URL must not become a way to probe the machine or
+ * the local network. (Hostname-based: a DNS name that resolves inward is out of
+ * scope for a local design tool.)
+ */
+function assertPublicHost(raw) {
+  if (flags.allowLocalHosts) return;
+  const host = new URL(raw).hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  const m172 = /^172\.(\d{1,3})\./.exec(host);
+  const isPrivate =
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".local") ||
+    host.endsWith(".internal") ||
+    host === "0.0.0.0" ||
+    host === "::" ||
+    host === "::1" ||
+    /^127\./.test(host) ||
+    /^10\./.test(host) ||
+    /^192\.168\./.test(host) ||
+    /^169\.254\./.test(host) ||
+    (!!m172 && Number(m172[1]) >= 16 && Number(m172[1]) <= 31) ||
+    /^f[cd][0-9a-f]{2}:/i.test(host) ||
+    /^fe80:/i.test(host);
+  if (isPrivate) {
+    throw new Error(
+      `refusing private/loopback image host "${host}" (pass --allow-local-hosts for LAN assets): ${raw}`,
+    );
+  }
+}
+
+async function readCapped(res, max) {
+  const reader = res.body.getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      await reader.cancel();
+      throw new Error(`image too large (max ${max / 1024 / 1024}MB)`);
+    }
+    chunks.push(Buffer.from(value));
+  }
+  return Buffer.concat(chunks);
+}
+
+async function fetchImage(url, hops = 0) {
+  if (hops > 3) throw new Error(`too many redirects: ${url}`);
+  assertPublicHost(url);
+  const res = await fetch(url, {
+    headers: { "User-Agent": "Mozilla/5.0 (compatible; carddeck-editorial/1.0)" },
+    redirect: "manual",
+  });
+  if (res.status >= 300 && res.status < 400) {
+    const location = res.headers.get("location");
+    if (!location) throw new Error(`redirect without a location: ${url}`);
+    return fetchImage(new URL(location, url).href, hops + 1);
+  }
+  if (!res.ok) throw new Error(`image download failed (${res.status}): ${url}`);
+  const type = res.headers.get("content-type") ?? "";
+  if (!type.startsWith("image/")) throw new Error(`not an image (${type}): ${url}`);
+  const declared = Number(res.headers.get("content-length") ?? 0);
+  if (Number.isFinite(declared) && declared > MAX_IMAGE_BYTES) {
+    throw new Error(`image too large (max ${MAX_IMAGE_BYTES / 1024 / 1024}MB): ${url}`);
+  }
+  return readCapped(res, MAX_IMAGE_BYTES);
+}
 
 async function download(url) {
   const key = crypto.createHash("sha1").update(url).digest("hex").slice(0, 16) + ".jpg";
   const file = path.join(cacheDir, key);
   if (!fs.existsSync(file)) {
     fs.mkdirSync(cacheDir, { recursive: true });
-    const res = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; carddeck-editorial/1.0)" },
-      redirect: "follow",
-    });
-    if (!res.ok) throw new Error(`image download failed (${res.status}): ${url}`);
-    const type = res.headers.get("content-type") ?? "";
-    if (!type.startsWith("image/")) throw new Error(`not an image (${type}): ${url}`);
-    fs.writeFileSync(file, Buffer.from(await res.arrayBuffer()));
+    const bytes = await fetchImage(url);
+    fs.writeFileSync(file, bytes);
     console.log(`  ↓ ${path.basename(file)}  ${url.slice(0, 72)}…`);
   }
   return file;

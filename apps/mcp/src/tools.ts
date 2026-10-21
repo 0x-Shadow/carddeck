@@ -316,6 +316,10 @@ const scaffoldDesignSchema = z.object({
     .string()
     .optional()
     .describe("Directory to copy the kit into (default: <repo>/work/designs/<name>)"),
+  force: z
+    .boolean()
+    .optional()
+    .describe("Overwrite a non-empty target directory. Refused by default so an edited deck.mjs is never clobbered"),
 });
 
 // ── server ──────────────────────────────────────────────────────────────────
@@ -870,7 +874,7 @@ export async function createServer(opts: ServerOptions = {}): Promise<McpServer>
     {
       title: "Scaffold design kit",
       description:
-        "Copy the Editorial starter kit (theme tokens, eleven layouts, the Chromium/PPTX/PDF renderer, and a full 14-slide example deck) into a working directory. Returns the exact render command. Edit deck.mjs, run render.mjs, review out/preview.jpg, then deliver the .pptx.",
+        "Copy the Editorial starter kit (theme tokens, eleven layouts, the Chromium/PPTX/PDF renderer, and a full 14-slide example deck) into a working directory. Returns the exact render command. Refuses to overwrite a non-empty directory unless force is true. Edit deck.mjs, run render.mjs, review out/preview.jpg, then deliver the .pptx.",
       inputSchema: scaffoldDesignSchema.shape,
     },
     guarded(async (args: z.infer<typeof scaffoldDesignSchema>) => {
@@ -888,6 +892,15 @@ export async function createServer(opts: ServerOptions = {}): Promise<McpServer>
         await fs.access(path.join(DESIGN_KIT_DIR, "render.mjs"));
       } catch {
         throw new Error(`design kit not found at ${DESIGN_KIT_DIR}`);
+      }
+
+      // Scaffolding is a write into a model-chosen path: never clobber an
+      // existing project (or an edited deck.mjs) without an explicit force.
+      const existing = await fs.readdir(target).catch(() => [] as string[]);
+      if (existing.length > 0 && !args.force) {
+        throw new Error(
+          `refusing to scaffold into ${target}: it is not empty (${existing.length} entries, deck.mjs would be overwritten). Pick another name/outDir, or pass force: true.`,
+        );
       }
 
       await fs.mkdir(target, { recursive: true });

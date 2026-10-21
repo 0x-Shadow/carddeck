@@ -10,7 +10,7 @@
  *  - one idea per slide: a title of 2-3 short lines plus at most 4 supports
  */
 
-import { T, chrome, foot, kick, titleLines, bodyStack, statBlock, esc } from "./theme.mjs";
+import { T, chrome, foot, kick, titleLines, bodyStack, statBlock, esc, inline } from "./theme.mjs";
 
 const toneText = (tone) => (tone === "bone" ? "rgba(11,13,16,.66)" : "rgba(242,238,228,.66)");
 const toneRule = (tone) => (tone === "bone" ? "rgba(11,13,16,.16)" : "rgba(242,238,228,.16)");
@@ -252,7 +252,7 @@ export function manifesto(s, ctx) {
           .map(
             (r, i) => `<div style="border-top:1px solid ${toneRule(tone)};padding:18px 0;display:flex;gap:22px;align-items:baseline">
               <span class="mono acc" style="font-size:14px;letter-spacing:.14em;width:36px">0${i + 1}</span>
-              <div style="font-size:23px;line-height:1.45;color:${tone === "bone" ? "rgba(11,13,16,.82)" : "rgba(242,238,228,.82)"}">${r}</div>
+              <div style="font-size:23px;line-height:1.45;color:${tone === "bone" ? "rgba(11,13,16,.82)" : "rgba(242,238,228,.82)"}">${inline(r)}</div>
             </div>`,
           )
           .join("")}

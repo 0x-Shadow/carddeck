@@ -175,7 +175,7 @@ Every tool answers with a single text item carrying a JSON envelope:
 | `add_image` | `deckId`, `source: { url }` or `{ path }`, `cardId?` (default first card), `caption?`, `layout?` (`full`\|`side`\|`behind`) | `{ deckId, cardId, assetId, url, bytes, block }`. Copies the image into `DATA_DIR/assets` (max 10 MB; png/jpeg/webp/gif) and appends an image block. |
 | `export_deck` | `deckId`, `format` (`pptx`\|`pdf`\|`potx`), `outDir?` (default `<DATA_DIR>/exports`) | `{ deckId, format, path, bytes }` — `path` is absolute. |
 | `get_design_system` | — | `{ name, summary, guide, kit, layouts, run, fonts, next }` — the full Editorial design guide as markdown, plus the absolute path of the runnable starter kit. |
-| `scaffold_design_kit` | `name?`, `outDir?` (default `<repo>/work/designs/<name>`) | `{ outDir, files, command, outputs, next }` — copies the kit and returns the exact render command. |
+| `scaffold_design_kit` | `name?`, `outDir?` (default `<repo>/work/designs/<name>`), `force?` | `{ outDir, files, command, outputs, next }` — copies the kit and returns the exact render command. Refuses a non-empty target unless `force: true`. |
 
 Notes:
 

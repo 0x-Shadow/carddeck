@@ -69,7 +69,7 @@ paths are resolved relative to the deck file.
 | `fullBleedList` | `image`, `pos`, `items` `[{t,s}]`, `close`, `mutedColor` |
 | `steps` | `items` `[{t,s}]`, `close`, `aside` |
 | `cards` | `items` `[{label,prompt}]` |
-| `manifesto` | `lede`, `rules` (strings, may contain inline HTML), `sticker` |
+| `manifesto` | `lede`, `rules` (strings; only `<i>/<b>/<em>/<strong>/<br>` survive), `sticker` |
 | `rows` | `items` `[{word,text}]`, `rowPad`, `wordW` |
 | `quote` | `image`, `pos`, `lines` (strings), `caption` |
 | `close` | `image`, `pos`, `body`, `close`, `size` |
@@ -92,3 +92,17 @@ The display face is Segoe UI Black (Windows). The renderer warns when it is
 missing. Install Segoe UI, or change the font stack in `theme.mjs` to a heavy
 grotesk that exists on the machine **before** you compose — the whole hierarchy
 depends on that 900 weight.
+
+## Remote images and trust
+
+Remote images are fetched with a 25 MB cap, and only from public `http(s)`
+hosts: loopback, RFC1918, link-local, mDNS and `.internal` names are refused,
+including across redirects. That keeps a model-written deck spec from turning a
+photo URL into a port scan of the machine or the LAN. If your photos live on a
+local server, pass `--allow-local-hosts`.
+
+The renderer writes only inside `--out` and `.image-cache/`. It never executes
+deck content: every interpolated string is escaped, and the two fields that
+allow emphasis (`manifesto.rules`, `stat.label`) accept only `<i>`, `<b>`,
+`<em>`, `<strong>` and `<br>` — no attributes, no scripts.
+

@@ -29,3 +29,6 @@ docs/superpowers/
 # Local editor and coverage output
 .vscode/*.local.json
 coverage/
+
+# Local design/scaffold output (scaffold_design_kit, rendered decks)
+/work/

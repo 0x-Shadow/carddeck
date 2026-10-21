@@ -390,5 +390,18 @@ describe("carddeck MCP server", () => {
     }
     // a scaffold never drags a previous render along with it
     expect(existsSync(path.join(target, "out"))).toBe(false);
+
+    // and it never clobbers an existing project without an explicit force
+    const again = await call(client, "scaffold_design_kit", { name: "Test Deck", outDir: target });
+    expect(again.isError).toBe(true);
+    expect(again.body.ok).toBe(false);
+    expect(String(again.body.error)).toContain("refusing to scaffold");
+    const forced = await call(client, "scaffold_design_kit", {
+      name: "Test Deck",
+      outDir: target,
+      force: true,
+    });
+    expect(forced.isError).toBe(false);
+    expect(forced.body.ok).toBe(true);
   });
 });
